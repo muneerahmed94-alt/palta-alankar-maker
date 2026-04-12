@@ -1,0 +1,2035 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Palta Alankar Maker</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #fdf6e3 0%, #f5e6d3 100%);
+            min-height: 100vh;
+            color: #3e2723;
+        }
+
+        .container {
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        header h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            color: #bf360c;
+            margin-bottom: 0.3rem;
+        }
+
+        header .subtitle {
+            font-size: 1rem;
+            color: #795548;
+            font-weight: 300;
+        }
+
+        .card {
+            background: white;
+            border-radius: 16px;
+            padding: 2rem;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+            margin-bottom: 1.5rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.2rem;
+        }
+
+        .input-group label {
+            display: block;
+            font-weight: 500;
+            margin-bottom: 0.5rem;
+            color: #4e342e;
+        }
+
+        .input-group input[type="text"] {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            font-size: 1.15rem;
+            border: 2px solid #d7ccc8;
+            border-radius: 10px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            letter-spacing: 1px;
+        }
+
+        .input-group input[type="text"]:focus {
+            outline: none;
+            border-color: #bf360c;
+        }
+
+        .help-text {
+            font-size: 0.78rem;
+            color: #8d6e63;
+            margin-top: 0.4rem;
+            line-height: 1.5;
+        }
+
+        .presets {
+            margin-bottom: 1.4rem;
+        }
+
+        .presets-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #795548;
+            margin-bottom: 0.5rem;
+        }
+
+        .preset-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.4rem;
+        }
+
+        .preset-btn {
+            padding: 0.35rem 0.75rem;
+            font-size: 0.82rem;
+            background: #efebe9;
+            border: 1px solid #d7ccc8;
+            border-radius: 20px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            letter-spacing: 0.3px;
+        }
+
+        .preset-btn:hover {
+            background: #bf360c;
+            color: white;
+            border-color: #bf360c;
+        }
+
+        .options {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1.4rem;
+            flex-wrap: wrap;
+        }
+
+        .options label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.92rem;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .options input[type="checkbox"] {
+            accent-color: #bf360c;
+            width: 17px;
+            height: 17px;
+        }
+
+        .generate-btn {
+            width: 100%;
+            padding: 0.85rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #bf360c, #d84315);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: transform 0.1s, box-shadow 0.2s;
+        }
+
+        .generate-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(191, 54, 12, 0.3);
+        }
+
+        .generate-btn:active {
+            transform: translateY(0);
+        }
+
+        /* Output section */
+        .output-card {
+            display: none;
+        }
+
+        .output-card.visible {
+            display: block;
+        }
+
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.2rem;
+        }
+
+        .output-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #bf360c;
+        }
+
+        .copy-btn {
+            padding: 0.4rem 1rem;
+            font-size: 0.82rem;
+            background: #efebe9;
+            border: 1px solid #d7ccc8;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .copy-btn:hover {
+            background: #d7ccc8;
+        }
+
+        .copy-btn.copied {
+            background: #c8e6c9;
+            border-color: #a5d6a7;
+            color: #2e7d32;
+        }
+
+        .direction-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 1.2rem 0 0.5rem;
+            padding-bottom: 0.35rem;
+            border-bottom: 2px solid #efebe9;
+        }
+
+        .direction-header:first-child {
+            margin-top: 0;
+        }
+
+        .direction-label {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: #795548;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .section-play-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .section-play-btn {
+            padding: 0.25rem 0.65rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: #e8f5e9;
+            border: 1px solid #a5d6a7;
+            border-radius: 6px;
+            color: #2e7d32;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .section-play-btn:hover {
+            background: #c8e6c9;
+        }
+
+        .section-play-btn.stopping {
+            background: #ffebee;
+            border-color: #ef9a9a;
+            color: #c62828;
+        }
+
+        .section-play-btn.stopping:hover {
+            background: #ffcdd2;
+        }
+
+        .repeat-label {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 0.75rem;
+            color: #8d6e63;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .repeat-label input {
+            accent-color: #bf360c;
+            width: 13px;
+            height: 13px;
+            cursor: pointer;
+        }
+
+        .palta-line {
+            display: flex;
+            align-items: center;
+            padding: 0.45rem 0.6rem;
+            border-radius: 8px;
+            margin-bottom: 0.2rem;
+            transition: background 0.15s;
+        }
+
+        .palta-line:hover {
+            background: #fbe9e7;
+        }
+
+        .line-actions {
+            display: none;
+            margin-left: auto;
+            gap: 0.3rem;
+            flex-shrink: 0;
+        }
+
+        .palta-line.last-line:hover .line-actions {
+            display: flex;
+        }
+
+        .line-action-btn {
+            padding: 0.15rem 0.5rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            border-radius: 5px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+            border: 1px solid;
+        }
+
+        .line-action-btn.add-btn {
+            background: #e8f5e9;
+            border-color: #a5d6a7;
+            color: #2e7d32;
+        }
+
+        .line-action-btn.add-btn:hover {
+            background: #c8e6c9;
+        }
+
+        .line-action-btn.del-btn {
+            background: #ffebee;
+            border-color: #ef9a9a;
+            color: #c62828;
+        }
+
+        .line-action-btn.del-btn:hover {
+            background: #ffcdd2;
+        }
+
+
+        .line-num {
+            width: 28px;
+            font-size: 0.75rem;
+            color: #bcaaa4;
+            flex-shrink: 0;
+            font-weight: 500;
+        }
+
+        .swar-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.15rem;
+        }
+
+        .swar {
+            display: inline-block;
+            padding: 0.2rem 0.35rem;
+            min-width: 2.2rem;
+            text-align: center;
+            font-size: 1rem;
+            border-radius: 4px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+        }
+
+        .swar.lower {
+            color: #1565c0;
+        }
+
+        .swar.middle {
+            color: #3e2723;
+        }
+
+        .swar.upper {
+            color: #c62828;
+        }
+
+        .pattern-info {
+            background: #fff8e1;
+            border: 1px solid #ffe082;
+            border-radius: 8px;
+            padding: 0.7rem 1rem;
+            margin-bottom: 1.2rem;
+            font-size: 0.85rem;
+            color: #795548;
+        }
+
+        .pattern-info strong {
+            color: #4e342e;
+        }
+
+
+        .error-msg {
+            color: #c62828;
+            font-size: 0.9rem;
+            padding: 0.8rem 1rem;
+            background: #ffebee;
+            border-radius: 10px;
+            margin-top: 1rem;
+            border: 1px solid #ffcdd2;
+        }
+
+        .legend {
+            display: flex;
+            gap: 1.2rem;
+            margin-top: 1rem;
+            padding-top: 0.8rem;
+            border-top: 1px solid #efebe9;
+            font-size: 0.78rem;
+            flex-wrap: wrap;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+        }
+
+        .legend-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .legend-dot.lower { background: #1565c0; }
+        .legend-dot.middle { background: #3e2723; }
+        .legend-dot.upper { background: #c62828; }
+
+        /* Key selector */
+        .key-select {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.92rem;
+            border: 2px solid #d7ccc8;
+            border-radius: 8px;
+            font-family: inherit;
+            background: white;
+            color: #3e2723;
+            cursor: pointer;
+        }
+
+        .key-select:focus {
+            outline: none;
+            border-color: #bf360c;
+        }
+
+        .sound-select, .reed-select {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.92rem;
+            border: 2px solid #d7ccc8;
+            border-radius: 8px;
+            font-family: inherit;
+            background: white;
+            color: #3e2723;
+            cursor: pointer;
+        }
+
+        .sound-select:focus, .reed-select:focus {
+            outline: none;
+            border-color: #bf360c;
+        }
+
+        .sound-options {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1.4rem;
+            margin-top: -0.6rem;
+            flex-wrap: wrap;
+            padding-left: 0.5rem;
+            align-items: center;
+        }
+
+        .sound-options label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.88rem;
+            color: #4e342e;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .sound-options input[type="checkbox"] {
+            accent-color: #bf360c;
+            width: 16px;
+            height: 16px;
+        }
+
+        .sound-options label.harmonium-only,
+        .sound-options label.piano-only {
+            display: none;
+        }
+
+        .sound-options label.harmonium-only.visible,
+        .sound-options label.piano-only.visible {
+            display: flex;
+        }
+
+        /* Beat selector */
+        .beat-select {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.92rem;
+            border: 2px solid #d7ccc8;
+            border-radius: 8px;
+            font-family: inherit;
+            background: white;
+            color: #3e2723;
+            cursor: pointer;
+        }
+
+        .beat-select:focus {
+            outline: none;
+            border-color: #bf360c;
+        }
+
+        .swar.beat-num {
+            color: #8d6e63;
+            font-weight: 600;
+            font-size: 0.92rem;
+        }
+
+        .beat-skip-label {
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            margin-left: 0.8rem;
+            font-size: 0.78rem;
+            color: #8d6e63;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .beat-skip-label input {
+            accent-color: #bf360c;
+            width: 14px;
+            height: 14px;
+            cursor: pointer;
+        }
+
+        /* Playback bar */
+        .playback-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+            padding: 0.8rem 1rem;
+            background: #fafafa;
+            border: 1px solid #efebe9;
+            border-radius: 10px;
+            margin-bottom: 1.2rem;
+        }
+
+        .playback-left {
+            display: flex;
+            align-items: center;
+            gap: 1.2rem;
+            flex-wrap: wrap;
+        }
+
+        .tempo-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .tempo-group label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #795548;
+        }
+
+        .tempo-slider {
+            width: 110px;
+            accent-color: #bf360c;
+            cursor: pointer;
+        }
+
+        .tempo-input {
+            width: 3.2rem;
+            padding: 0.2rem 0.3rem;
+            font-size: 0.85rem;
+            font-family: inherit;
+            font-weight: 500;
+            color: #3e2723;
+            border: 1px solid #d7ccc8;
+            border-radius: 5px;
+            text-align: center;
+            background: white;
+        }
+
+        .tempo-input:focus {
+            outline: none;
+            border-color: #bf360c;
+        }
+
+        .tempo-unit {
+            font-size: 0.8rem;
+            color: #8d6e63;
+        }
+
+        /* Play / Stop buttons */
+        .play-controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .play-btn {
+            padding: 0.45rem 1.1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 1px solid;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+            background: #e8f5e9;
+            border-color: #a5d6a7;
+            color: #2e7d32;
+        }
+
+        .play-btn:hover {
+            background: #c8e6c9;
+        }
+
+        .play-btn.stopping {
+            background: #ffebee;
+            border-color: #ef9a9a;
+            color: #c62828;
+        }
+
+        .play-btn.stopping:hover {
+            background: #ffcdd2;
+        }
+
+        /* Playback highlighting */
+        .palta-line.playing {
+            background: #fff3e0 !important;
+        }
+
+        .swar.playing {
+            background: #e65100 !important;
+            color: white !important;
+            border-radius: 6px;
+            transform: scale(1.15);
+            transition: all 0.08s ease;
+            box-shadow: 0 2px 8px rgba(230, 81, 0, 0.35);
+        }
+
+        @media (max-width: 600px) {
+            .container { padding: 1rem; }
+            header h1 { font-size: 1.6rem; }
+            .card { padding: 1.3rem; }
+            .swar { min-width: 1.8rem; font-size: 0.9rem; padding: 0.15rem 0.25rem; }
+            .options { gap: 0.8rem; }
+            .playback-bar { flex-direction: column; align-items: stretch; }
+            .play-controls { justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Palta Alankar Maker</h1>
+            <p class="subtitle">Generate all lines of a palta from the first sequence</p>
+        </header>
+
+        <div class="card">
+            <div class="input-group">
+                <label for="sequence-input">Enter the first line of the alankar</label>
+                <input type="text" id="sequence-input" placeholder="e.g. Sa Re Ga Ma" autocomplete="off" spellcheck="false">
+                <div class="help-text">
+                    Swaras: <strong>Sa Re Ga Ma Pa Dha Ni</strong> (or S R G M P D N)<br>
+                    Lower octave: prefix with dot (<strong>.Sa</strong>) &nbsp;|&nbsp; Upper octave: suffix with apostrophe (<strong>Sa'</strong>)
+                </div>
+            </div>
+
+            <div class="presets">
+                <div class="presets-label">Common patterns:</div>
+                <div class="preset-chips">
+                    <button class="preset-btn" data-pattern="Sa Re Ga Ma">Sa Re Ga Ma</button>
+                    <button class="preset-btn" data-pattern="Sa Re Ga Re">Sa Re Ga Re</button>
+                    <button class="preset-btn" data-pattern="Sa Re Sa Re Ga Re">Sa Re Sa Re Ga Re</button>
+                    <button class="preset-btn" data-pattern="Sa Ga Re Ma Ga Pa">Sa Ga Re Ma Ga Pa</button>
+                    <button class="preset-btn" data-pattern="Sa Re Ga Ma Pa">Sa Re Ga Ma Pa</button>
+                    <button class="preset-btn" data-pattern="Sa Re Ga Ma Ga Re">Sa Re Ga Ma Ga Re</button>
+                    <button class="preset-btn" data-pattern="Sa Re Ga Re Ga Ma">Sa Re Ga Re Ga Ma</button>
+                    <button class="preset-btn" data-pattern="Sa Ma Ga Re">Sa Ma Ga Re</button>
+                </div>
+            </div>
+
+            <div class="options">
+                <label>
+                    <input type="checkbox" id="include-descending" checked>
+                    Include Avarohi (descending)
+                </label>
+                <label>
+                    Sa =&nbsp;
+                    <select class="key-select" id="key-select">
+                        <option value="C" selected>C</option>
+                        <option value="C#">C# / Db</option>
+                        <option value="D">D</option>
+                        <option value="D#">D# / Eb</option>
+                        <option value="E">E</option>
+                        <option value="F">F</option>
+                        <option value="F#">F# / Gb</option>
+                        <option value="G">G</option>
+                        <option value="G#">G# / Ab</option>
+                        <option value="A">A</option>
+                        <option value="A#">A# / Bb</option>
+                        <option value="B">B</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="sound-options" id="sound-options">
+                <label>
+                    Sound&nbsp;
+                    <select class="sound-select" id="sound-select">
+                        <option value="piano" selected>Piano</option>
+                        <option value="harmonium">Harmonium</option>
+                    </select>
+                </label>
+                <label class="piano-only visible" id="piano-type-label">
+                    Type&nbsp;
+                    <select class="reed-select" id="piano-type-select">
+                        <option value="grand" selected>Grand Piano</option>
+                        <option value="upright">Upright Piano</option>
+                        <option value="electric">Electric Piano</option>
+                    </select>
+                </label>
+                <label class="harmonium-only" id="reed-label">
+                    Reed&nbsp;
+                    <select class="reed-select" id="reed-select">
+                        <option value="bass-male" selected>Bass-Male</option>
+                        <option value="bass-male-female">Bass-Male-Female</option>
+                        <option value="bass-male-male">Bass-Male-Male</option>
+                    </select>
+                </label>
+                <label id="coupler-label">
+                    <input type="checkbox" id="left-coupler" checked>
+                    Left Coupler
+                </label>
+            </div>
+
+            <button class="generate-btn" id="generate-btn">Generate Palta</button>
+
+            <div id="error-container"></div>
+        </div>
+
+        <div class="card output-card" id="output-card">
+            <div class="output-header">
+                <div class="output-title">Generated Palta</div>
+                <button class="copy-btn" id="copy-btn">Copy as Text</button>
+            </div>
+            <div class="playback-bar">
+                <div class="playback-left">
+                    <div class="tempo-group">
+                        <label for="beat-select">Beats</label>
+                        <select class="beat-select" id="beat-select">
+                            <option value="0">None</option>
+                            <option value="2">2</option>
+                            <option value="3">3</option>
+                            <option value="4" selected>4</option>
+                            <option value="6">6</option>
+                            <option value="8">8</option>
+                        </select>
+                    </div>
+                    <div class="tempo-group">
+                        <label for="tempo-slider">Tempo</label>
+                        <input type="range" id="tempo-slider" class="tempo-slider" min="60" max="480" value="138" step="5">
+                        <input type="number" id="tempo-input" class="tempo-input" min="60" max="480" value="138">
+                        <span class="tempo-unit">BPM</span>
+                    </div>
+                </div>
+                <div class="play-controls">
+                    <button class="play-btn" id="play-btn">&#9654; Play Both</button>
+                    <label class="repeat-label"><input type="checkbox" id="repeat-all"> Repeat</label>
+                </div>
+            </div>
+            <div id="pattern-info" class="pattern-info"></div>
+            <div id="output-lines"></div>
+            <div class="legend">
+                <div class="legend-item"><span class="legend-dot lower"></span> Mandra Saptak (lower)</div>
+                <div class="legend-item"><span class="legend-dot middle"></span> Madhya Saptak (middle)</div>
+                <div class="legend-item"><span class="legend-dot upper"></span> Taar Saptak (upper)</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ── Swara definitions ───────────────────────────────
+        const SWARAS_FULL  = ['Sa', 'Re', 'Ga', 'Ma', 'Pa', 'Dha', 'Ni'];
+        const SWARAS_SHORT = ['S',  'R',  'G',  'M',  'P',  'D',   'N'];
+
+        // ── Parse a single swara token to a numeric value ───
+        // Lower octave: 0–6, Middle: 7–13, Upper: 14–20
+        function parseSwara(token) {
+            let octave = 1; // middle
+            let name = token.trim();
+
+            if (name.startsWith('.')) {
+                octave = 0;
+                name = name.slice(1);
+            } else if (name.endsWith('\u2019') || name.endsWith("'")) {
+                octave = 2;
+                name = name.slice(0, -1);
+            }
+
+            let idx = SWARAS_FULL.findIndex(s => s.toLowerCase() === name.toLowerCase());
+            let isShort = false;
+            if (idx === -1) {
+                idx = SWARAS_SHORT.findIndex(s => s.toLowerCase() === name.toLowerCase());
+                isShort = true;
+            }
+
+            if (idx === -1) return null;
+            return { value: octave * 7 + idx, isShort };
+        }
+
+        // ── Convert numeric value back to display string ────
+        function numToSwara(num, useShort) {
+            const swaras = useShort ? SWARAS_SHORT : SWARAS_FULL;
+            let idx = ((num % 7) + 7) % 7;
+            let octave = Math.floor(num / 7);
+            if (num < 0 && num % 7 !== 0) {
+                octave = Math.floor(num / 7);
+            }
+
+            let prefix = '';
+            let suffix = '';
+            let octaveClass = 'middle';
+
+            if (octave <= 0) {
+                prefix = '.';
+                octaveClass = 'lower';
+            } else if (octave === 1) {
+                octaveClass = 'middle';
+            } else {
+                suffix = '\u2019';
+                octaveClass = 'upper';
+            }
+
+            return { text: prefix + swaras[idx] + suffix, octaveClass };
+        }
+
+        // ── Try splitting a continuous string into single-letter swaras ──
+        // e.g. "SRRSRGRS" → ['S','R','R','S','R','G','R','S']
+        const SHORT_SET = new Set(SWARAS_SHORT.map(s => s.toUpperCase()));
+
+        function trySplitContinuous(str) {
+            const upper = str.toUpperCase();
+            const results = [];
+            for (const ch of upper) {
+                if (!SHORT_SET.has(ch)) return null; // not all valid single-letter swaras
+                results.push(ch);
+            }
+            return results.length >= 2 ? results : null;
+        }
+
+        // ── Parse full input sequence ───────────────────────
+        function parseSequence(input) {
+            const tokens = input.trim().split(/[\s,]+/).filter(t => t.length > 0);
+            if (tokens.length === 0) {
+                return { error: 'Please enter at least one swara.' };
+            }
+
+            const notes = [];
+            let shortCount = 0;
+            let fullCount = 0;
+
+            for (const token of tokens) {
+                const parsed = parseSwara(token);
+                if (parsed) {
+                    notes.push(parsed.value);
+                    if (parsed.isShort) shortCount++;
+                    else fullCount++;
+                } else {
+                    // Try splitting as continuous short swaras (e.g. "SRGSRGM")
+                    const split = trySplitContinuous(token);
+                    if (split) {
+                        for (const ch of split) {
+                            const p = parseSwara(ch);
+                            notes.push(p.value);
+                            shortCount++;
+                        }
+                    } else {
+                        return { error: `Unknown swara: "${token}". Use Sa Re Ga Ma Pa Dha Ni (or S R G M P D N).` };
+                    }
+                }
+            }
+
+            if (notes.length < 2) {
+                return { error: 'Please enter at least 2 swaras to form a pattern.' };
+            }
+
+            return { notes, useShort: shortCount > fullCount };
+        }
+
+        // ── Generate palta lines ────────────────────────────
+        function generatePalta(notes, includeDescending, ascCount, descCount) {
+            const baseNote = notes[0];
+            const offsets = notes.map(n => n - baseNote);
+            ascCount = ascCount || 7;
+            descCount = descCount || 7;
+
+            const result = { ascending: [], descending: [], landingTop: null, landingBottom: null };
+
+            for (let step = 0; step < ascCount; step++) {
+                const base = baseNote + step;
+                result.ascending.push(offsets.map(o => base + o));
+            }
+
+            result.landingTop = baseNote + ascCount;
+
+            if (includeDescending) {
+                const descOffsets = offsets.map(o => -o);
+                for (let step = 0; step < descCount; step++) {
+                    const base = baseNote + 7 - step;
+                    result.descending.push(descOffsets.map(o => base + o));
+                }
+                result.landingBottom = baseNote + 7 - descCount;
+            }
+
+            return result;
+        }
+
+        // ── Render output (with data attributes for playback highlighting) ──
+        function renderPalta(palta, useShort, includeDescending, beatCount) {
+            const container = document.getElementById('output-lines');
+            container.innerHTML = '';
+
+            function createLineEl(notes, lineNum, section, lineIdx, isLast) {
+                const line = document.createElement('div');
+                line.className = 'palta-line' + (isLast ? ' last-line' : '');
+                line.dataset.section = section;
+                line.dataset.line = lineIdx;
+
+                const numEl = document.createElement('span');
+                numEl.className = 'line-num';
+                numEl.textContent = lineNum + '.';
+                line.appendChild(numEl);
+
+                const group = document.createElement('span');
+                group.className = 'swar-group';
+                notes.forEach((n, swarIdx) => {
+                    const sw = numToSwara(n, useShort);
+                    const span = document.createElement('span');
+                    span.className = 'swar ' + sw.octaveClass;
+                    span.textContent = sw.text;
+                    span.dataset.section = section;
+                    span.dataset.line = lineIdx;
+                    span.dataset.swar = swarIdx;
+                    group.appendChild(span);
+                });
+                line.appendChild(group);
+
+                if (isLast) {
+                    const actions = document.createElement('span');
+                    actions.className = 'line-actions';
+
+                    const delBtn = document.createElement('button');
+                    delBtn.className = 'line-action-btn del-btn';
+                    delBtn.textContent = '− Delete';
+                    delBtn.dataset.actionSection = section === 'asc' ? 'asc' : 'desc';
+                    actions.appendChild(delBtn);
+
+                    const addBtn = document.createElement('button');
+                    addBtn.className = 'line-action-btn add-btn';
+                    addBtn.textContent = '+ Add';
+                    addBtn.dataset.actionSection = section === 'asc' ? 'asc' : 'desc';
+                    actions.appendChild(addBtn);
+
+                    line.appendChild(actions);
+                }
+                return line;
+            }
+
+            function createBeatLine(beatCount, section, skipId) {
+                const line = document.createElement('div');
+                line.className = 'palta-line';
+                line.dataset.section = section;
+                line.dataset.line = -1;
+
+                const numEl = document.createElement('span');
+                numEl.className = 'line-num';
+                line.appendChild(numEl);
+
+                const group = document.createElement('span');
+                group.className = 'swar-group';
+                for (let i = 0; i < beatCount; i++) {
+                    const span = document.createElement('span');
+                    span.className = 'swar beat-num';
+                    span.textContent = i + 1;
+                    span.dataset.section = section;
+                    span.dataset.line = -1;
+                    span.dataset.swar = i;
+                    group.appendChild(span);
+                }
+                line.appendChild(group);
+
+                const skipLabel = document.createElement('label');
+                skipLabel.className = 'beat-skip-label';
+                const cb = document.createElement('input');
+                cb.type = 'checkbox';
+                cb.id = skipId;
+                cb.checked = false;
+                skipLabel.appendChild(cb);
+                skipLabel.appendChild(document.createTextNode('Skip'));
+                line.appendChild(skipLabel);
+
+                return line;
+            }
+
+            function createDirectionHeader(title, playId, repeatId) {
+                const header = document.createElement('div');
+                header.className = 'direction-header';
+
+                const label = document.createElement('span');
+                label.className = 'direction-label';
+                label.textContent = title;
+                header.appendChild(label);
+
+                const controls = document.createElement('div');
+                controls.className = 'section-play-controls';
+
+                const playBtn = document.createElement('button');
+                playBtn.className = 'section-play-btn';
+                playBtn.id = playId;
+                playBtn.innerHTML = '&#9654; Play';
+                controls.appendChild(playBtn);
+
+                const repeatLabel = document.createElement('label');
+                repeatLabel.className = 'repeat-label';
+                const repeatCb = document.createElement('input');
+                repeatCb.type = 'checkbox';
+                repeatCb.id = repeatId;
+                repeatLabel.appendChild(repeatCb);
+                repeatLabel.appendChild(document.createTextNode('Repeat'));
+                controls.appendChild(repeatLabel);
+
+                header.appendChild(controls);
+                return header;
+            }
+
+            // Ascending header with play/repeat
+            container.appendChild(createDirectionHeader('Aarohi (Ascending)', 'play-asc', 'repeat-asc'));
+
+            // Beat count line before aarohi
+            if (beatCount > 0) {
+                container.appendChild(createBeatLine(beatCount, 'beat-intro', 'skip-intro-beats'));
+            }
+
+            palta.ascending.forEach((notes, i) => {
+                const isLast = i === palta.ascending.length - 1;
+                container.appendChild(createLineEl(notes, i + 1, 'asc', i, isLast));
+            });
+
+            if (includeDescending && palta.descending.length > 0) {
+                // Descending header with play/repeat
+                container.appendChild(createDirectionHeader('Avarohi (Descending)', 'play-desc', 'repeat-desc'));
+
+                // Beat count line before avarohi
+                if (beatCount > 0) {
+                    container.appendChild(createBeatLine(beatCount, 'beat-transition', 'skip-transition-beats'));
+                }
+
+                palta.descending.forEach((notes, i) => {
+                    const isLast = i === palta.descending.length - 1;
+                    container.appendChild(createLineEl(notes, i + 1, 'desc', i, isLast));
+                });
+            }
+        }
+
+        // ── Build plain text for clipboard ──────────────────
+        function paltaToText(palta, useShort, includeDescending, beatCount) {
+            const lines = [];
+
+            lines.push('AAROHI (Ascending)');
+            lines.push('─'.repeat(30));
+            if (beatCount > 0) {
+                const beats = Array.from({ length: beatCount }, (_, i) => String(i + 1));
+                lines.push(`    ${beats.join('  ')}`);
+            }
+            palta.ascending.forEach((notes, i) => {
+                const swaras = notes.map(n => numToSwara(n, useShort).text);
+                lines.push(`${String(i + 1).padStart(2)}.  ${swaras.join('  ')}`);
+            });
+
+            if (includeDescending && palta.descending.length > 0) {
+                lines.push('');
+                lines.push('AVAROHI (Descending)');
+                lines.push('─'.repeat(30));
+                if (beatCount > 0) {
+                    const beats = Array.from({ length: beatCount }, (_, i) => String(i + 1));
+                    lines.push(`    ${beats.join('  ')}`);
+                }
+                palta.descending.forEach((notes, i) => {
+                    const swaras = notes.map(n => numToSwara(n, useShort).text);
+                    lines.push(`${String(i + 1).padStart(2)}.  ${swaras.join('  ')}`);
+                });
+            }
+
+            return lines.join('\n');
+        }
+
+        // ── Describe the pattern ────────────────────────────
+        function describePattern(notes, useShort) {
+            const offsets = notes.map(n => n - notes[0]);
+            const swaraNames = notes.map(n => numToSwara(n, useShort).text);
+            const intervals = [];
+            for (let i = 1; i < offsets.length; i++) {
+                const diff = offsets[i] - offsets[i - 1];
+                intervals.push(diff > 0 ? `+${diff}` : String(diff));
+            }
+            return `<strong>Pattern:</strong> ${swaraNames.join(' ')} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Intervals:</strong> ${intervals.join(', ')}`;
+        }
+
+        // ═══════════════════════════════════════════════════
+        // ── Audio Engine: Piano Synth via Web Audio API ────
+        // ═══════════════════════════════════════════════════
+
+        // Shuddh swaras map to major scale intervals (semitones from Sa)
+        const SWARA_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+
+        // Base frequency of Sa in each key (octave 4)
+        const KEY_BASE_FREQ = {
+            'C': 261.63, 'C#': 277.18, 'D': 293.66, 'D#': 311.13,
+            'E': 329.63, 'F': 349.23, 'F#': 369.99, 'G': 392.00,
+            'G#': 415.30, 'A': 440.00, 'A#': 466.16, 'B': 493.88
+        };
+
+        // Convert internal note number to Hz frequency
+        function noteNumToFreq(noteNum, key) {
+            const swaraIdx = ((noteNum % 7) + 7) % 7;
+            const octave = Math.floor(noteNum / 7); // 0=lower, 1=middle, 2=upper
+            const semitones = (octave - 1) * 12 + SWARA_SEMITONES[swaraIdx];
+            return KEY_BASE_FREQ[key] * Math.pow(2, semitones / 12);
+        }
+
+        // ── Piano dispatcher ─────────────────────────────
+        function createPianoNote(audioCtx, dest, freq, startTime, duration, pianoType, leftCoupler) {
+            let createFn;
+            if (pianoType === 'upright') createFn = createUprightPianoNote;
+            else if (pianoType === 'electric') createFn = createElectricPianoNote;
+            else createFn = createGrandPianoNote;
+
+            const oscillators = createFn(audioCtx, dest, freq, startTime, duration);
+
+            // Left coupler: play the same note one octave lower
+            if (leftCoupler) {
+                oscillators.push(...createFn(audioCtx, dest, freq / 2, startTime, duration));
+            }
+
+            return oscillators;
+        }
+
+        // ── Grand Piano ─────────────────────────────────
+        // Rich harmonics with piano-string inharmonicity, hammer noise burst,
+        // long sustain with per-harmonic decay, and subtle body resonance.
+        function createGrandPianoNote(audioCtx, dest, freq, startTime, duration) {
+            const oscillators = [];
+
+            // Piano strings are slightly inharmonic: partial n is at freq * n * (1 + B*n^2)
+            // B is small (~0.0004 for mid-range). Higher notes have more inharmonicity.
+            const B = 0.0003 + (freq / 4000) * 0.0008;
+
+            const harmonics = [
+                { n: 1,  amp: 1.0   },
+                { n: 2,  amp: 0.72  },
+                { n: 3,  amp: 0.38  },
+                { n: 4,  amp: 0.22  },
+                { n: 5,  amp: 0.14  },
+                { n: 6,  amp: 0.09  },
+                { n: 7,  amp: 0.055 },
+                { n: 8,  amp: 0.032 },
+                { n: 9,  amp: 0.018 },
+                { n: 10, amp: 0.010 },
+            ];
+
+            const masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.12;
+            masterGain.connect(dest);
+
+            for (const h of harmonics) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                osc.type = 'sine';
+                // Apply inharmonicity: each partial is stretched slightly sharp
+                const partialFreq = freq * h.n * Math.sqrt(1 + B * h.n * h.n);
+                osc.frequency.value = partialFreq;
+
+                // Subtle random detuning for natural feel
+                if (h.n > 1) {
+                    osc.detune.value = (Math.random() - 0.5) * 3;
+                }
+
+                const amp = h.amp;
+                // Higher partials decay much faster (string damping)
+                const decayTime = duration * (0.9 - (h.n - 1) * 0.07);
+                const effectiveDecay = Math.max(decayTime, 0.15);
+
+                // Envelope: sharp hammer attack → fast initial drop → long sustain decay
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(amp, startTime + 0.003);
+                // Hammer release — quick drop to sustain level
+                gain.gain.exponentialRampToValueAtTime(
+                    Math.max(amp * 0.55, 0.0001),
+                    startTime + 0.04
+                );
+                // Long sustain decay
+                gain.gain.exponentialRampToValueAtTime(
+                    Math.max(amp * 0.08, 0.0001),
+                    startTime + effectiveDecay
+                );
+                // Final release
+                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start(startTime);
+                osc.stop(startTime + duration + 0.05);
+                oscillators.push(osc);
+            }
+
+            // Hammer noise burst — short filtered noise on attack for realism
+            const bufferSize = audioCtx.sampleRate * 0.04;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1);
+            }
+            const noiseSrc = audioCtx.createBufferSource();
+            noiseSrc.buffer = noiseBuffer;
+
+            const noiseFilter = audioCtx.createBiquadFilter();
+            noiseFilter.type = 'bandpass';
+            noiseFilter.frequency.value = Math.min(freq * 3, 6000);
+            noiseFilter.Q.value = 1.2;
+
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0, startTime);
+            noiseGain.gain.linearRampToValueAtTime(0.15, startTime + 0.001);
+            noiseGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.035);
+
+            noiseSrc.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(masterGain);
+            noiseSrc.start(startTime);
+            noiseSrc.stop(startTime + 0.05);
+            oscillators.push(noiseSrc);
+
+            // Soundboard resonance — subtle low-frequency body hum
+            const bodyOsc = audioCtx.createOscillator();
+            const bodyGain = audioCtx.createGain();
+            bodyOsc.type = 'sine';
+            bodyOsc.frequency.value = freq * 0.5;
+            bodyGain.gain.setValueAtTime(0, startTime);
+            bodyGain.gain.linearRampToValueAtTime(0.04, startTime + 0.01);
+            bodyGain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration * 0.5);
+            bodyOsc.connect(bodyGain);
+            bodyGain.connect(masterGain);
+            bodyOsc.start(startTime);
+            bodyOsc.stop(startTime + duration + 0.05);
+            oscillators.push(bodyOsc);
+
+            return oscillators;
+        }
+
+        // ── Upright Piano ───────────────────────────────
+        // Shorter sustain, brighter attack, more muted sustain than grand.
+        // Slightly more inharmonicity and a "boxier" body resonance.
+        function createUprightPianoNote(audioCtx, dest, freq, startTime, duration) {
+            const oscillators = [];
+            const B = 0.0005 + (freq / 4000) * 0.001;
+
+            const harmonics = [
+                { n: 1,  amp: 1.0   },
+                { n: 2,  amp: 0.65  },
+                { n: 3,  amp: 0.42  },
+                { n: 4,  amp: 0.25  },
+                { n: 5,  amp: 0.16  },
+                { n: 6,  amp: 0.10  },
+                { n: 7,  amp: 0.06  },
+                { n: 8,  amp: 0.03  },
+            ];
+
+            const masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.12;
+
+            // Upright has a slightly boxy, mid-heavy character
+            const bodyEq = audioCtx.createBiquadFilter();
+            bodyEq.type = 'peaking';
+            bodyEq.frequency.value = 800;
+            bodyEq.Q.value = 1.0;
+            bodyEq.gain.value = 3;
+
+            // Slightly roll off the very top — less open than a grand
+            const lpf = audioCtx.createBiquadFilter();
+            lpf.type = 'lowpass';
+            lpf.frequency.value = Math.min(freq * 10, 8000);
+            lpf.Q.value = 0.5;
+
+            masterGain.connect(bodyEq);
+            bodyEq.connect(lpf);
+            lpf.connect(dest);
+
+            for (const h of harmonics) {
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+
+                osc.type = 'sine';
+                const partialFreq = freq * h.n * Math.sqrt(1 + B * h.n * h.n);
+                osc.frequency.value = partialFreq;
+
+                if (h.n > 1) {
+                    osc.detune.value = (Math.random() - 0.5) * 5;
+                }
+
+                const amp = h.amp;
+                // Shorter decay than grand — dampers are closer to strings
+                const decayTime = duration * (0.7 - (h.n - 1) * 0.06);
+                const effectiveDecay = Math.max(decayTime, 0.12);
+
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(amp, startTime + 0.003);
+                // Brighter, snappier attack
+                gain.gain.exponentialRampToValueAtTime(
+                    Math.max(amp * 0.45, 0.0001),
+                    startTime + 0.035
+                );
+                // Faster sustain decay
+                gain.gain.exponentialRampToValueAtTime(
+                    Math.max(amp * 0.05, 0.0001),
+                    startTime + effectiveDecay
+                );
+                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+                osc.connect(gain);
+                gain.connect(masterGain);
+                osc.start(startTime);
+                osc.stop(startTime + duration + 0.05);
+                oscillators.push(osc);
+            }
+
+            // Hammer noise — slightly louder and more percussive than grand
+            const bufferSize = audioCtx.sampleRate * 0.03;
+            const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+            const data = noiseBuffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                data[i] = (Math.random() * 2 - 1);
+            }
+            const noiseSrc = audioCtx.createBufferSource();
+            noiseSrc.buffer = noiseBuffer;
+
+            const noiseFilter = audioCtx.createBiquadFilter();
+            noiseFilter.type = 'bandpass';
+            noiseFilter.frequency.value = Math.min(freq * 4, 7000);
+            noiseFilter.Q.value = 0.8;
+
+            const noiseGain = audioCtx.createGain();
+            noiseGain.gain.setValueAtTime(0, startTime);
+            noiseGain.gain.linearRampToValueAtTime(0.2, startTime + 0.001);
+            noiseGain.gain.exponentialRampToValueAtTime(0.0001, startTime + 0.025);
+
+            noiseSrc.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(masterGain);
+            noiseSrc.start(startTime);
+            noiseSrc.stop(startTime + 0.04);
+            oscillators.push(noiseSrc);
+
+            return oscillators;
+        }
+
+        // ── Electric Piano (Rhodes-style) ───────────────
+        // Classic FM synthesis: sine carrier modulated by sine at harmonic ratios
+        // produces the characteristic bell-like, shimmering tone with bark on attack.
+        function createElectricPianoNote(audioCtx, dest, freq, startTime, duration) {
+            const oscillators = [];
+
+            const masterGain = audioCtx.createGain();
+            masterGain.gain.value = 0.16;
+            masterGain.connect(dest);
+
+            // ── Tine 1: fundamental carrier with harmonic FM modulator ──
+            // Modulator decays quickly → bell-like attack that mellows into a sine
+            const mod1 = audioCtx.createOscillator();
+            const mod1Gain = audioCtx.createGain();
+            mod1.type = 'sine';
+            mod1.frequency.value = freq; // 1:1 ratio — classic Rhodes
+            // Modulation depth: high on attack, decays quickly (the "bark")
+            const mod1Depth = freq * 1.8;
+            mod1Gain.gain.setValueAtTime(0, startTime);
+            mod1Gain.gain.linearRampToValueAtTime(mod1Depth, startTime + 0.002);
+            mod1Gain.gain.exponentialRampToValueAtTime(mod1Depth * 0.15, startTime + 0.08);
+            mod1Gain.gain.exponentialRampToValueAtTime(mod1Depth * 0.03, startTime + duration * 0.5);
+            mod1Gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration);
+
+            const carrier1 = audioCtx.createOscillator();
+            const carrier1Gain = audioCtx.createGain();
+            carrier1.type = 'sine';
+            carrier1.frequency.value = freq;
+
+            carrier1Gain.gain.setValueAtTime(0, startTime);
+            carrier1Gain.gain.linearRampToValueAtTime(1.0, startTime + 0.003);
+            carrier1Gain.gain.exponentialRampToValueAtTime(0.6, startTime + 0.06);
+            carrier1Gain.gain.exponentialRampToValueAtTime(0.15, startTime + duration * 0.7);
+            carrier1Gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+            mod1.connect(mod1Gain);
+            mod1Gain.connect(carrier1.frequency);
+            carrier1.connect(carrier1Gain);
+            carrier1Gain.connect(masterGain);
+
+            mod1.start(startTime);
+            mod1.stop(startTime + duration + 0.05);
+            carrier1.start(startTime);
+            carrier1.stop(startTime + duration + 0.05);
+            oscillators.push(mod1, carrier1);
+
+            // ── Tine 2: octave above, quieter — adds shimmer ──
+            const mod2 = audioCtx.createOscillator();
+            const mod2Gain = audioCtx.createGain();
+            mod2.type = 'sine';
+            mod2.frequency.value = freq * 3; // 3:2 ratio for metallic character
+            const mod2Depth = freq * 0.8;
+            mod2Gain.gain.setValueAtTime(0, startTime);
+            mod2Gain.gain.linearRampToValueAtTime(mod2Depth, startTime + 0.002);
+            mod2Gain.gain.exponentialRampToValueAtTime(mod2Depth * 0.08, startTime + 0.06);
+            mod2Gain.gain.exponentialRampToValueAtTime(0.01, startTime + duration * 0.4);
+
+            const carrier2 = audioCtx.createOscillator();
+            const carrier2Gain = audioCtx.createGain();
+            carrier2.type = 'sine';
+            carrier2.frequency.value = freq * 2;
+
+            carrier2Gain.gain.setValueAtTime(0, startTime);
+            carrier2Gain.gain.linearRampToValueAtTime(0.3, startTime + 0.003);
+            carrier2Gain.gain.exponentialRampToValueAtTime(0.08, startTime + 0.05);
+            carrier2Gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration * 0.6);
+
+            mod2.connect(mod2Gain);
+            mod2Gain.connect(carrier2.frequency);
+            carrier2.connect(carrier2Gain);
+            carrier2Gain.connect(masterGain);
+
+            mod2.start(startTime);
+            mod2.stop(startTime + duration + 0.05);
+            carrier2.start(startTime);
+            carrier2.stop(startTime + duration + 0.05);
+            oscillators.push(mod2, carrier2);
+
+            // ── Subtle tremolo — classic Rhodes wobble ──
+            const lfo = audioCtx.createOscillator();
+            const lfoGain = audioCtx.createGain();
+            lfo.type = 'sine';
+            lfo.frequency.value = 3.8;
+            lfoGain.gain.value = 0.06;
+            lfo.connect(lfoGain);
+            lfoGain.connect(masterGain.gain);
+            lfo.start(startTime);
+            lfo.stop(startTime + duration + 0.05);
+            oscillators.push(lfo);
+
+            return oscillators;
+        }
+
+        // Synthesize a harmonium reed note
+        // Uses sawtooth oscillators (natural reed harmonic series) + filters for authentic timbre
+        function createHarmoniumNote(audioCtx, dest, freq, startTime, duration, reedType, leftCoupler) {
+            const oscillators = [];
+            const reeds = [];
+
+            // Bass reed — one octave below
+            reeds.push({ freq: freq / 2, amp: 0.45, detune: 0 });
+
+            // Male reed(s)
+            if (reedType === 'bass-male-male') {
+                reeds.push({ freq: freq, amp: 1.0, detune: -4 });
+                reeds.push({ freq: freq, amp: 0.95, detune: 6 }); // detuned pair = chorus beating
+            } else {
+                reeds.push({ freq: freq, amp: 1.0, detune: 0 });
+            }
+
+            // Female reed — one octave above
+            if (reedType === 'bass-male-female') {
+                reeds.push({ freq: freq * 2, amp: 0.35, detune: 0 });
+            }
+
+            // Left coupler — two octaves below
+            if (leftCoupler) {
+                reeds.push({ freq: freq / 4, amp: 0.3, detune: 0 });
+            }
+
+            const volumeScale = 0.09 / Math.sqrt(reeds.length);
+
+            // Shared subtle tremolo LFO — simulates bellows vibration
+            const lfo = audioCtx.createOscillator();
+            lfo.type = 'sine';
+            lfo.frequency.value = 4.5;
+            lfo.start(startTime);
+            lfo.stop(startTime + duration + 0.1);
+            oscillators.push(lfo);
+
+            for (const reed of reeds) {
+                // Sawtooth oscillator — natural reed harmonic series (all harmonics, 1/n falloff)
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sawtooth';
+                osc.frequency.value = reed.freq;
+                osc.detune.value = reed.detune + (Math.random() - 0.5) * 5;
+
+                // Lowpass filter — tame harsh high harmonics (simulates reed + body rolloff)
+                const lpf = audioCtx.createBiquadFilter();
+                lpf.type = 'lowpass';
+                lpf.frequency.value = Math.min(reed.freq * 6, 5000);
+                lpf.Q.value = 0.8;
+
+                // Peaking EQ — boost 2nd–3rd harmonic area for nasal reed character
+                const eq = audioCtx.createBiquadFilter();
+                eq.type = 'peaking';
+                eq.frequency.value = Math.min(reed.freq * 2.5, 4000);
+                eq.Q.value = 1.5;
+                eq.gain.value = 3;
+
+                // Gain envelope
+                const gain = audioCtx.createGain();
+                const amp = reed.amp * volumeScale;
+
+                gain.gain.setValueAtTime(0, startTime);
+                gain.gain.linearRampToValueAtTime(amp, startTime + 0.02);
+                gain.gain.setValueAtTime(amp, startTime + Math.max(duration - 0.05, 0.025));
+                gain.gain.exponentialRampToValueAtTime(0.0001, startTime + duration);
+
+                // Connect LFO for subtle tremolo (proportional to note level)
+                const lfoDepth = audioCtx.createGain();
+                lfoDepth.gain.value = amp * 0.07;
+                lfo.connect(lfoDepth);
+                lfoDepth.connect(gain.gain);
+
+                // Chain: osc → lowpass → peaking EQ → gain → destination
+                osc.connect(lpf);
+                lpf.connect(eq);
+                eq.connect(gain);
+                gain.connect(dest);
+
+                osc.start(startTime);
+                osc.stop(startTime + duration + 0.05);
+                oscillators.push(osc);
+            }
+
+            return oscillators;
+        }
+
+        // Synthesize a metronome click (wood-block style)
+        function createMetronomeClick(audioCtx, dest, startTime) {
+            const oscillators = [];
+
+            // Main tone — sharp attack, fast decay
+            const osc1 = audioCtx.createOscillator();
+            const gain1 = audioCtx.createGain();
+            osc1.type = 'sine';
+            osc1.frequency.value = 880;
+            gain1.gain.setValueAtTime(0, startTime);
+            gain1.gain.linearRampToValueAtTime(0.28, startTime + 0.001);
+            gain1.gain.exponentialRampToValueAtTime(0.001, startTime + 0.06);
+            osc1.connect(gain1);
+            gain1.connect(dest);
+            osc1.start(startTime);
+            osc1.stop(startTime + 0.08);
+            oscillators.push(osc1);
+
+            // Higher harmonic for "click" character
+            const osc2 = audioCtx.createOscillator();
+            const gain2 = audioCtx.createGain();
+            osc2.type = 'sine';
+            osc2.frequency.value = 1760;
+            gain2.gain.setValueAtTime(0, startTime);
+            gain2.gain.linearRampToValueAtTime(0.14, startTime + 0.001);
+            gain2.gain.exponentialRampToValueAtTime(0.001, startTime + 0.03);
+            osc2.connect(gain2);
+            gain2.connect(dest);
+            osc2.start(startTime);
+            osc2.stop(startTime + 0.05);
+            oscillators.push(osc2);
+
+            return oscillators;
+        }
+
+        // ── Timeline builders ────────────────────────────────
+
+        function buildAscTimeline(palta, beatCount, skipIntroBeats) {
+            const timeline = [];
+            if (!skipIntroBeats) {
+                for (let i = 0; i < beatCount; i++) {
+                    timeline.push({ type: 'beat', section: 'beat-intro', swarIdx: i });
+                }
+            }
+            palta.ascending.forEach((line, li) => {
+                line.forEach((noteNum, si) => {
+                    timeline.push({ type: 'note', noteNum, section: 'asc', lineIdx: li, swarIdx: si });
+                });
+            });
+            return timeline;
+        }
+
+        function buildDescTimeline(palta, beatCount, skipTransitionBeats) {
+            const timeline = [];
+            if (!skipTransitionBeats) {
+                for (let i = 0; i < beatCount; i++) {
+                    timeline.push({ type: 'beat', section: 'beat-transition', swarIdx: i });
+                }
+            }
+            palta.descending.forEach((line, li) => {
+                line.forEach((noteNum, si) => {
+                    timeline.push({ type: 'note', noteNum, section: 'desc', lineIdx: li, swarIdx: si });
+                });
+            });
+            return timeline;
+        }
+
+        function buildFullTimeline(palta, beatCount, skipIntroBeats, skipTransitionBeats) {
+            const timeline = buildAscTimeline(palta, beatCount, skipIntroBeats);
+            if (palta.descending && palta.descending.length > 0) {
+                timeline.push(...buildDescTimeline(palta, beatCount, skipTransitionBeats));
+            }
+            return timeline;
+        }
+
+        // ── Highlight ───────────────────────────────────────
+
+        function highlightNote(event) {
+            document.querySelectorAll('.swar.playing').forEach(el => el.classList.remove('playing'));
+            document.querySelectorAll('.palta-line.playing').forEach(el => el.classList.remove('playing'));
+
+            if (!event) return;
+
+            if (event.type === 'beat') {
+                const swar = document.querySelector(
+                    `.swar[data-section="${event.section}"][data-line="-1"][data-swar="${event.swarIdx}"]`
+                );
+                if (swar) {
+                    swar.classList.add('playing');
+                    const line = swar.closest('.palta-line');
+                    if (line) line.classList.add('playing');
+                    swar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+                return;
+            }
+
+            const swar = document.querySelector(
+                `.swar[data-section="${event.section}"][data-line="${event.lineIdx}"][data-swar="${event.swarIdx}"]`
+            );
+            if (swar) {
+                swar.classList.add('playing');
+                const line = swar.closest('.palta-line');
+                if (line) line.classList.add('playing');
+                swar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+        }
+
+        // ── Playback engine (supports section play & repeat) ──
+
+        let currentPaltaData = null;
+        let currentParsedNotes = null;
+        let currentUseShort = false;
+        let ascLineCount = 7;
+        let descLineCount = 7;
+        let playbackState = null;
+        let activePlayBtn = null;
+
+        function getPlaybackParams() {
+            const key = document.getElementById('key-select').value;
+            const tempo = parseInt(document.getElementById('tempo-input').value) || 138;
+            const beatCount = parseInt(document.getElementById('beat-select').value);
+            const skipIntroCb = document.getElementById('skip-intro-beats');
+            const skipTransCb = document.getElementById('skip-transition-beats');
+            const instrument = document.getElementById('sound-select').value;
+            const pianoType = document.getElementById('piano-type-select').value;
+            const reedType = document.getElementById('reed-select').value;
+            const leftCoupler = document.getElementById('left-coupler').checked;
+            return {
+                key,
+                tempo,
+                beatCount,
+                skipIntroBeats: skipIntroCb ? skipIntroCb.checked : false,
+                skipTransitionBeats: skipTransCb ? skipTransCb.checked : false,
+                instrument,
+                pianoType,
+                reedType,
+                leftCoupler,
+            };
+        }
+
+        // mode: 'all' | 'asc' | 'desc'
+        function startPlayback(mode, triggerBtn) {
+            if (!currentPaltaData) return;
+            stopPlayback();
+
+            const params = getPlaybackParams();
+            let repeatId, buildFn;
+
+            if (mode === 'asc') {
+                repeatId = 'repeat-asc';
+                buildFn = (p) => buildAscTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats);
+            } else if (mode === 'desc') {
+                repeatId = 'repeat-desc';
+                buildFn = (p) => buildDescTimeline(currentPaltaData, p.beatCount, p.skipTransitionBeats);
+            } else {
+                repeatId = 'repeat-all';
+                buildFn = (p) => buildFullTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats, p.skipTransitionBeats);
+            }
+
+            const timeline = buildFn(params);
+            if (timeline.length === 0) return;
+
+            // Create one AudioContext that persists across repeat loops
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const compressor = audioCtx.createDynamicsCompressor();
+            compressor.threshold.value = -20;
+            compressor.knee.value = 20;
+            compressor.ratio.value = 4;
+            compressor.connect(audioCtx.destination);
+
+            const allOscillators = [];
+            const timers = [];
+
+            // Schedule one iteration and chain the next seamlessly on the same AudioContext
+            function scheduleIteration(audioStartTime, tl, iterParams) {
+                const { key, onsetInterval, noteDuration, instrument, pianoType, reedType, leftCoupler } = iterParams;
+
+                // Schedule audio (sample-accurate on the AudioContext clock)
+                for (let i = 0; i < tl.length; i++) {
+                    const ev = tl[i];
+                    const evTime = audioStartTime + i * onsetInterval;
+                    if (ev.type === 'beat') {
+                        allOscillators.push(...createMetronomeClick(audioCtx, compressor, evTime));
+                    } else {
+                        const freq = noteNumToFreq(ev.noteNum, key);
+                        if (instrument === 'harmonium') {
+                            allOscillators.push(...createHarmoniumNote(audioCtx, compressor, freq, evTime, noteDuration, reedType, leftCoupler));
+                        } else {
+                            allOscillators.push(...createPianoNote(audioCtx, compressor, freq, evTime, noteDuration, pianoType, leftCoupler));
+                        }
+                    }
+                }
+
+                // Schedule visual highlighting (wall-clock setTimeout)
+                const baseDelay = (audioStartTime - audioCtx.currentTime) * 1000;
+                for (let i = 0; i < tl.length; i++) {
+                    const timer = setTimeout(() => {
+                        highlightNote(tl[i]);
+                    }, baseDelay + i * onsetInterval * 1000);
+                    timers.push(timer);
+                }
+
+                // When the last note starts, decide whether to chain next iteration
+                const repeatCheckDelay = baseDelay + (tl.length - 1) * onsetInterval * 1000;
+                const repeatTimer = setTimeout(() => {
+                    const repeatCb = document.getElementById(repeatId);
+                    if (repeatCb && repeatCb.checked && playbackState) {
+                        // Seamlessly chain: next iteration starts exactly 1 beat after the last note
+                        const nextStart = audioStartTime + tl.length * onsetInterval;
+                        const freshParams = getPlaybackParams();
+                        const freshTimeline = buildFn(freshParams);
+                        const freshInterval = 60 / freshParams.tempo;
+                        const freshDuration = freshParams.instrument === 'harmonium'
+                            ? freshInterval
+                            : Math.max(freshInterval * 2, 0.45);
+                        scheduleIteration(nextStart, freshTimeline, {
+                            key: freshParams.key,
+                            onsetInterval: freshInterval,
+                            noteDuration: freshDuration,
+                            instrument: freshParams.instrument,
+                            pianoType: freshParams.pianoType,
+                            reedType: freshParams.reedType,
+                            leftCoupler: freshParams.leftCoupler,
+                        });
+                    } else {
+                        // No repeat — clean up after the last note rings out
+                        const cleanupTimer = setTimeout(() => finishPlayback(), onsetInterval * 1000 + 200);
+                        timers.push(cleanupTimer);
+                    }
+                }, repeatCheckDelay);
+                timers.push(repeatTimer);
+            }
+
+            const { key, tempo, instrument, pianoType, reedType, leftCoupler } = params;
+            const onsetInterval = 60 / tempo;
+            // Piano: long sustain (2x overlap). Harmonium: note ends when next starts.
+            const noteDuration = instrument === 'harmonium'
+                ? onsetInterval
+                : Math.max(onsetInterval * 2, 0.45);
+
+            scheduleIteration(audioCtx.currentTime + 0.1, timeline, {
+                key, onsetInterval, noteDuration, instrument, pianoType, reedType, leftCoupler
+            });
+
+            playbackState = { audioCtx, timers, allOscillators };
+
+            // Toggle the triggering button to a stop button
+            if (triggerBtn) {
+                activePlayBtn = triggerBtn;
+                activePlayBtn._origHTML = activePlayBtn.innerHTML;
+                activePlayBtn.innerHTML = '&#9632; Stop';
+                activePlayBtn.classList.add('stopping');
+            }
+        }
+
+        function restorePlayBtn() {
+            if (activePlayBtn) {
+                activePlayBtn.innerHTML = activePlayBtn._origHTML;
+                activePlayBtn.classList.remove('stopping');
+                activePlayBtn = null;
+            }
+        }
+
+        function stopPlayback() {
+            if (!playbackState) return;
+
+            if (playbackState.timers) {
+                for (const t of playbackState.timers) clearTimeout(t);
+            }
+            if (playbackState.allOscillators) {
+                const now = playbackState.audioCtx.currentTime;
+                for (const osc of playbackState.allOscillators) {
+                    try { osc.stop(now + 0.02); } catch (e) { /* already stopped */ }
+                }
+            }
+            if (playbackState.audioCtx) {
+                playbackState.audioCtx.close().catch(() => {});
+            }
+            playbackState = null;
+
+            highlightNote(null);
+            restorePlayBtn();
+        }
+
+        function finishPlayback() {
+            if (!playbackState) return;
+
+            if (playbackState.timers) {
+                for (const t of playbackState.timers) clearTimeout(t);
+            }
+            if (playbackState.audioCtx) {
+                playbackState.audioCtx.close().catch(() => {});
+            }
+            playbackState = null;
+
+            highlightNote(null);
+            restorePlayBtn();
+        }
+
+        // ── Main generate action ────────────────────────────
+        function doGenerate() {
+            stopPlayback(); // stop any active playback
+
+            const input = document.getElementById('sequence-input').value;
+            const includeDesc = document.getElementById('include-descending').checked;
+            const beatCount = parseInt(document.getElementById('beat-select').value);
+            const errorContainer = document.getElementById('error-container');
+            const outputCard = document.getElementById('output-card');
+
+            errorContainer.innerHTML = '';
+            outputCard.classList.remove('visible');
+
+            if (!input.trim()) {
+                errorContainer.innerHTML = '<div class="error-msg">Please enter a swara sequence to generate the palta.</div>';
+                return;
+            }
+
+            const parsed = parseSequence(input);
+            if (parsed.error) {
+                errorContainer.innerHTML = `<div class="error-msg">${parsed.error}</div>`;
+                return;
+            }
+
+            // Reset line counts on fresh generate
+            ascLineCount = 7;
+            descLineCount = 7;
+            currentParsedNotes = parsed.notes;
+            currentUseShort = parsed.useShort;
+
+            const palta = generatePalta(parsed.notes, includeDesc, ascLineCount, descLineCount);
+            currentPaltaData = palta;
+
+            // Show pattern info
+            document.getElementById('pattern-info').innerHTML = describePattern(parsed.notes, parsed.useShort);
+
+            // Render
+            renderPalta(palta, parsed.useShort, includeDesc, beatCount);
+            outputCard.classList.add('visible');
+
+            // Store for copy
+            outputCard.dataset.plainText = paltaToText(palta, parsed.useShort, includeDesc, beatCount);
+
+            // Scroll to output
+            outputCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // ── Re-render after add/delete ──────────────────────
+        function reRenderPalta() {
+            if (!currentParsedNotes) return;
+            stopPlayback();
+
+            const includeDesc = document.getElementById('include-descending').checked;
+            const beatCount = parseInt(document.getElementById('beat-select').value);
+
+            // Preserve skip checkbox states before re-render destroys them
+            const skipIntroCb = document.getElementById('skip-intro-beats');
+            const skipTransCb = document.getElementById('skip-transition-beats');
+            const savedSkipIntro = skipIntroCb ? skipIntroCb.checked : false;
+            const savedSkipTrans = skipTransCb ? skipTransCb.checked : false;
+
+            const palta = generatePalta(currentParsedNotes, includeDesc, ascLineCount, descLineCount);
+            currentPaltaData = palta;
+
+            renderPalta(palta, currentUseShort, includeDesc, beatCount);
+
+            // Restore skip checkbox states
+            const newSkipIntroCb = document.getElementById('skip-intro-beats');
+            const newSkipTransCb = document.getElementById('skip-transition-beats');
+            if (newSkipIntroCb) newSkipIntroCb.checked = savedSkipIntro;
+            if (newSkipTransCb) newSkipTransCb.checked = savedSkipTrans;
+
+            const outputCard = document.getElementById('output-card');
+            outputCard.dataset.plainText = paltaToText(palta, currentUseShort, includeDesc, beatCount);
+        }
+
+        // ── Event listeners ─────────────────────────────────
+        document.getElementById('generate-btn').addEventListener('click', doGenerate);
+
+        document.getElementById('sequence-input').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') doGenerate();
+        });
+
+        // Preset buttons
+        document.querySelectorAll('.preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.getElementById('sequence-input').value = btn.dataset.pattern;
+                doGenerate();
+            });
+        });
+
+        // Copy button
+        document.getElementById('copy-btn').addEventListener('click', () => {
+            const text = document.getElementById('output-card').dataset.plainText;
+            navigator.clipboard.writeText(text).then(() => {
+                const btn = document.getElementById('copy-btn');
+                btn.textContent = 'Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {
+                    btn.textContent = 'Copy as Text';
+                    btn.classList.remove('copied');
+                }, 2000);
+            });
+        });
+
+        // Play Both / Stop button
+        document.getElementById('play-btn').addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            if (btn.classList.contains('stopping')) {
+                stopPlayback();
+            } else {
+                startPlayback('all', btn);
+            }
+        });
+
+        // Section play buttons and add/delete (delegated — they are created dynamically)
+        document.getElementById('output-lines').addEventListener('click', (e) => {
+            const playBtn = e.target.closest('.section-play-btn');
+            if (playBtn) {
+                if (playBtn.classList.contains('stopping')) {
+                    stopPlayback();
+                } else if (playBtn.id === 'play-asc') {
+                    startPlayback('asc', playBtn);
+                } else if (playBtn.id === 'play-desc') {
+                    startPlayback('desc', playBtn);
+                }
+                return;
+            }
+
+            const actionBtn = e.target.closest('.line-action-btn');
+            if (actionBtn) {
+                const isAdd = actionBtn.classList.contains('add-btn');
+                if (isAdd) { ascLineCount++; descLineCount++; }
+                else if (ascLineCount > 1) { ascLineCount--; descLineCount--; }
+                reRenderPalta();
+            }
+        });
+
+        // Tempo: keep slider and input in sync
+        document.getElementById('tempo-slider').addEventListener('input', (e) => {
+            document.getElementById('tempo-input').value = e.target.value;
+        });
+        document.getElementById('tempo-input').addEventListener('input', (e) => {
+            let val = parseInt(e.target.value);
+            if (val && val >= 60 && val <= 480) {
+                document.getElementById('tempo-slider').value = val;
+            }
+        });
+
+        // Show/hide instrument-specific options based on sound selection
+        function updateCouplerDefault() {
+            const instrument = document.getElementById('sound-select').value;
+            const pianoType = document.getElementById('piano-type-select').value;
+            const coupler = document.getElementById('left-coupler');
+            if (instrument === 'piano') {
+                coupler.checked = pianoType === 'grand' || pianoType === 'upright';
+            } else {
+                coupler.checked = false;
+            }
+        }
+
+        document.getElementById('sound-select').addEventListener('change', (e) => {
+            const isPiano = e.target.value === 'piano';
+            const isHarmonium = e.target.value === 'harmonium';
+            document.querySelectorAll('.piano-only').forEach(el => {
+                el.classList.toggle('visible', isPiano);
+            });
+            document.querySelectorAll('.harmonium-only').forEach(el => {
+                el.classList.toggle('visible', isHarmonium);
+            });
+            updateCouplerDefault();
+        });
+
+        document.getElementById('piano-type-select').addEventListener('change', updateCouplerDefault);
+
+        // Re-render when beat count changes (updates the beat line display)
+        document.getElementById('beat-select').addEventListener('change', () => {
+            const input = document.getElementById('sequence-input').value;
+            if (input.trim() && document.getElementById('output-card').classList.contains('visible')) {
+                doGenerate();
+            }
+        });
+    </script>
+</body>
+</html>
