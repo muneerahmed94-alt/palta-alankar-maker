@@ -1,3 +1,47 @@
+<!--
+  ============================================================================
+  Palta Alankar Maker
+  ============================================================================
+  A single-page web app for Indian classical music practice.
+
+  WHAT IT DOES:
+  - Takes the first line of a palta/alankar (e.g. "Sa Re Ga Ma") and generates
+    all 7 ascending (aarohi) and 7 descending (avarohi) lines automatically.
+  - Plays back the generated palta using synthesized Piano or Harmonium sounds.
+  - Provides a MIDI keyboard interface to play along with the generated palta.
+
+  ARCHITECTURE (single-file, no build step):
+  - CSS: All styles are inline in <style> (warm Indian-music-themed palette).
+  - HTML: Three card sections — Input, Output, MIDI Keyboard.
+  - JS:  Five subsystems, in order:
+        1. Swara Parser      — converts text input ("Sa Re Ga") to numeric note values
+        2. Palta Generator    — generates ascending/descending lines from a pattern
+        3. Renderer           — builds the DOM for the generated palta display
+        4. Audio Engine       — Web Audio API synthesizers (3 piano types + harmonium)
+        5. Playback Engine    — schedules timed playback of palta lines
+        6. MIDI Keyboard      — Web MIDI API for external keyboard input
+
+  SWARA NUMBERING:
+  Each swara is mapped to an integer:
+    Lower octave (mandra saptak): 0–6   (.Sa .Re .Ga .Ma .Pa .Dha .Ni)
+    Middle octave (madhya saptak): 7–13  (Sa Re Ga Ma Pa Dha Ni)
+    Upper octave (taar saptak):   14–20  (Sa' Re' Ga' Ma' Pa' Dha' Ni')
+
+  SOUND SYNTHESIS:
+  - Piano: Additive synthesis with inharmonicity modeling, hammer noise, body
+    resonance. Three variants: Grand (rich sustain), Upright (boxy, shorter
+    decay), Electric/Rhodes (FM synthesis with tremolo).
+  - Harmonium: Sawtooth oscillators (natural reed spectrum) through lowpass and
+    peaking EQ filters. Six reed configurations from 2-reed to 4-reed combos.
+  - Coupler: Left coupler adds lower octave, Right coupler adds upper octave.
+
+  MIDI:
+  - Uses the Web MIDI API (navigator.requestMIDIAccess).
+  - Supports note-on/off, velocity sensitivity, sustain pedal (CC 64).
+  - Octave shift (±3 octaves) and transpose (±12 semitones).
+  - Piano sustain checkbox lets notes ring out naturally without damping.
+  ============================================================================
+-->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -5,7 +49,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Palta Alankar Maker</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- ================================================================
+         CSS: All styles are inline. Organized into these sections:
+         1. Base / Layout       — body, container, header
+         2. Input Card          — form elements, presets, options
+         3. Output Card         — palta display, playback bar, legend
+         4. Playback Controls   — play/stop buttons, tempo, beat selector
+         5. MIDI Card           — MIDI connection, sound options, adj buttons
+         6. Responsive          — mobile breakpoint at 600px
+         ================================================================ -->
     <style>
+        /* ── 1. Base / Layout ──────────────────────────────── */
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
@@ -47,6 +101,7 @@
             margin-bottom: 1.5rem;
         }
 
+        /* ── 2. Input Card ─────────────────────────────────── */
         .input-group {
             margin-bottom: 1.2rem;
         }
@@ -161,7 +216,7 @@
             transform: translateY(0);
         }
 
-        /* Output section */
+        /* ── 3. Output Card ────────────────────────────────── */
         .output-card {
             display: none;
         }
@@ -419,7 +474,7 @@
         .legend-dot.middle { background: #3e2723; }
         .legend-dot.upper { background: #c62828; }
 
-        /* Key selector */
+        /* ── 4. Playback Controls ─────────────────────────── */
         .key-select {
             padding: 0.4rem 0.6rem;
             font-size: 0.92rem;
@@ -643,6 +698,158 @@
             box-shadow: 0 2px 8px rgba(230, 81, 0, 0.35);
         }
 
+        /* ── 5. MIDI Keyboard Card ────────────────────────── */
+        .midi-connect-row {
+            display: flex;
+            align-items: center;
+            gap: 0.8rem;
+            margin-bottom: 1.2rem;
+            flex-wrap: wrap;
+        }
+
+        .midi-connect-btn {
+            padding: 0.45rem 1.1rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 1px solid #d7ccc8;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            background: #efebe9;
+            color: #3e2723;
+        }
+
+        .midi-connect-btn:hover {
+            background: #d7ccc8;
+        }
+
+        .midi-connect-btn.connected {
+            background: #e8f5e9;
+            border-color: #a5d6a7;
+            color: #2e7d32;
+        }
+
+        .midi-connect-btn.connected:hover {
+            background: #c8e6c9;
+        }
+
+        .midi-device-select {
+            padding: 0.4rem 0.6rem;
+            font-size: 0.85rem;
+            border: 2px solid #d7ccc8;
+            border-radius: 8px;
+            font-family: inherit;
+            background: white;
+            color: #3e2723;
+            cursor: pointer;
+        }
+
+        .midi-device-select:focus {
+            outline: none;
+            border-color: #bf360c;
+        }
+
+        .midi-status {
+            font-size: 0.82rem;
+            color: #8d6e63;
+        }
+
+        .midi-status.active {
+            color: #2e7d32;
+            font-weight: 500;
+        }
+
+        .midi-sound-options {
+            display: flex;
+            gap: 1.5rem;
+            margin-bottom: 1.2rem;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .midi-sound-options label {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.88rem;
+            color: #4e342e;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .midi-sound-options input[type="checkbox"] {
+            accent-color: #bf360c;
+            width: 16px;
+            height: 16px;
+        }
+
+        .midi-sound-options label.midi-piano-only,
+        .midi-sound-options label.midi-harmonium-only {
+            display: none;
+        }
+
+        .midi-sound-options label.midi-piano-only.midi-visible,
+        .midi-sound-options label.midi-harmonium-only.midi-visible {
+            display: flex;
+        }
+
+        .midi-adj-row {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+        }
+
+        .midi-adj-group {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .midi-adj-label {
+            font-size: 0.88rem;
+            font-weight: 500;
+            color: #795548;
+            min-width: 4.5rem;
+        }
+
+        .midi-adj-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border: 2px solid #d7ccc8;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.15s;
+            background: #efebe9;
+            color: #3e2723;
+            line-height: 1;
+        }
+
+        .midi-adj-btn:hover {
+            background: #bf360c;
+            color: white;
+            border-color: #bf360c;
+        }
+
+        .midi-adj-btn:active {
+            transform: scale(0.95);
+        }
+
+        .midi-adj-value {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #3e2723;
+            min-width: 2rem;
+            text-align: center;
+        }
+
+        /* ── 6. Responsive (mobile ≤ 600px) ───────────────── */
         @media (max-width: 600px) {
             .container { padding: 1rem; }
             header h1 { font-size: 1.6rem; }
@@ -651,17 +858,29 @@
             .options { gap: 0.8rem; }
             .playback-bar { flex-direction: column; align-items: stretch; }
             .play-controls { justify-content: center; }
+            .midi-adj-row { gap: 1rem; }
+            .midi-sound-options { gap: 0.8rem; }
         }
     </style>
 </head>
+<!-- ====================================================================
+     HTML STRUCTURE:
+     1. Header            — title + subtitle
+     2. Input Card        — swara input, preset buttons, options (key, sound)
+     3. Output Card       — generated palta lines, playback bar, legend
+     4. MIDI Card         — MIDI keyboard connection + sound controls
+     ==================================================================== -->
 <body>
     <div class="container">
+        <!-- ── 1. Header ──────────────────────────────────── -->
         <header>
             <h1>Palta Alankar Maker</h1>
             <p class="subtitle">Generate all lines of a palta from the first sequence</p>
         </header>
 
+        <!-- ── 2. Input Card ───────────────────────────────── -->
         <div class="card">
+            <!-- Swara text input — accepts full names (Sa Re Ga) or short (S R G) -->
             <div class="input-group">
                 <label for="sequence-input">Enter the first line of the alankar</label>
                 <input type="text" id="sequence-input" placeholder="e.g. Sa Re Ga Ma" autocomplete="off" spellcheck="false">
@@ -731,6 +950,9 @@
                         <option value="bass-male" selected>Bass-Male</option>
                         <option value="bass-male-female">Bass-Male-Female</option>
                         <option value="bass-male-male">Bass-Male-Male</option>
+                        <option value="male-male-female-bass">Male-Male-Female-Bass</option>
+                        <option value="bass-male-female-female">Bass-Male-Female-Female</option>
+                        <option value="bass-bass-male-female">Bass-Bass-Male-Female</option>
                     </select>
                 </label>
                 <label id="coupler-label">
@@ -744,6 +966,7 @@
             <div id="error-container"></div>
         </div>
 
+        <!-- ── 3. Output Card (hidden until palta is generated) ── -->
         <div class="card output-card" id="output-card">
             <div class="output-header">
                 <div class="output-title">Generated Palta</div>
@@ -782,10 +1005,105 @@
                 <div class="legend-item"><span class="legend-dot upper"></span> Taar Saptak (upper)</div>
             </div>
         </div>
+
+        <!-- ── 4. MIDI Keyboard Card ───────────────────────── -->
+        <!-- Independent sound engine — uses Web MIDI API for external keyboards -->
+        <div class="card">
+            <div class="output-header" style="margin-bottom:1rem">
+                <div class="output-title">MIDI Keyboard</div>
+            </div>
+            <div class="midi-connect-row">
+                <button class="midi-connect-btn" id="midi-connect-btn">Connect MIDI</button>
+                <select class="midi-device-select" id="midi-device-select" style="display:none"></select>
+                <span class="midi-status" id="midi-status">Not connected</span>
+            </div>
+            <div class="midi-sound-options">
+                <label>
+                    Sound&nbsp;
+                    <select class="sound-select" id="midi-sound-select">
+                        <option value="piano" selected>Piano</option>
+                        <option value="harmonium">Harmonium</option>
+                    </select>
+                </label>
+                <label class="midi-piano-only midi-visible" id="midi-piano-type-label">
+                    Type&nbsp;
+                    <select class="reed-select" id="midi-piano-type-select">
+                        <option value="grand" selected>Grand Piano</option>
+                        <option value="upright">Upright Piano</option>
+                        <option value="electric">Electric Piano</option>
+                    </select>
+                </label>
+                <label class="midi-harmonium-only" id="midi-reed-label">
+                    Reed&nbsp;
+                    <select class="reed-select" id="midi-reed-select">
+                        <option value="bass-male" selected>Bass-Male</option>
+                        <option value="bass-male-female">Bass-Male-Female</option>
+                        <option value="bass-male-male">Bass-Male-Male</option>
+                        <option value="male-male-female-bass">Male-Male-Female-Bass</option>
+                        <option value="bass-male-female-female">Bass-Male-Female-Female</option>
+                        <option value="bass-bass-male-female">Bass-Bass-Male-Female</option>
+                    </select>
+                </label>
+                <label>
+                    Coupler&nbsp;
+                    <select class="reed-select" id="midi-coupler-select">
+                        <option value="none" selected>None</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                    </select>
+                </label>
+                <label class="midi-piano-only midi-visible">
+                    <input type="checkbox" id="midi-sustain">
+                    Sustain
+                </label>
+            </div>
+            <div class="midi-adj-row">
+                <div class="midi-adj-group">
+                    <span class="midi-adj-label">Octave</span>
+                    <button class="midi-adj-btn" id="midi-oct-down">&minus;</button>
+                    <span class="midi-adj-value" id="midi-oct-value">0</span>
+                    <button class="midi-adj-btn" id="midi-oct-up">+</button>
+                </div>
+                <div class="midi-adj-group">
+                    <span class="midi-adj-label">Transpose</span>
+                    <button class="midi-adj-btn" id="midi-trans-down">&minus;</button>
+                    <span class="midi-adj-value" id="midi-trans-value">0</span>
+                    <button class="midi-adj-btn" id="midi-trans-up">+</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        // ── Swara definitions ───────────────────────────────
+        // ================================================================
+        // JAVASCRIPT — Six subsystems:
+        //   1. SWARA PARSER        (lines marked ── Swara)
+        //   2. PALTA GENERATOR     (lines marked ── Generate)
+        //   3. RENDERER            (lines marked ── Render)
+        //   4. AUDIO ENGINE        (lines marked ── Audio)
+        //   5. PLAYBACK ENGINE     (lines marked ── Playback)
+        //   6. MIDI KEYBOARD       (lines marked ── MIDI)
+        // ================================================================
+
+
+        // ══════════════════════════════════════════════════════
+        // ── 1. SWARA PARSER ──────────────────────────────────
+        // Converts user input text into numeric note values.
+        //
+        // Swara numbering: each swara gets a unique integer.
+        //   Lower octave (prefix with dot):   .Sa=0  .Re=1  ... .Ni=6
+        //   Middle octave (no prefix):         Sa=7   Re=8   ... Ni=13
+        //   Upper octave (suffix with '):      Sa'=14 Re'=15 ... Ni'=20
+        //
+        // Input formats supported:
+        //   - Full names:  "Sa Re Ga Ma"
+        //   - Short names: "S R G M"
+        //   - Continuous:  "SRGM" (auto-split into single letters)
+        //   - Mixed case:  "sa re ga" / "SA RE GA"
+        //   - Octave marks: ".Sa" (lower), "Sa'" (upper)
+        // ══════════════════════════════════════════════════════
+
+        // The 7 swaras of Indian classical music (shuddh/natural notes)
         const SWARAS_FULL  = ['Sa', 'Re', 'Ga', 'Ma', 'Pa', 'Dha', 'Ni'];
         const SWARAS_SHORT = ['S',  'R',  'G',  'M',  'P',  'D',   'N'];
 
@@ -893,7 +1211,20 @@
             return { notes, useShort: shortCount > fullCount };
         }
 
-        // ── Generate palta lines ────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // ── 2. PALTA GENERATOR ───────────────────────────────
+        // Takes the parsed note array and generates all ascending/descending
+        // lines by transposing the pattern up/down one swara at a time.
+        //
+        // Example: input [Sa, Re, Ga, Ma] (values [7,8,9,10])
+        //   offsets from base = [0, +1, +2, +3]
+        //   Line 1: base=7  → [7, 8, 9, 10]  = Sa Re Ga Ma
+        //   Line 2: base=8  → [8, 9, 10, 11]  = Re Ga Ma Pa
+        //   Line 3: base=9  → [9, 10, 11, 12] = Ga Ma Pa Dha
+        //   ... and so on for 7 lines (one full octave)
+        //
+        // Descending mirrors the offsets: offsets become negative.
+        // ══════════════════════════════════════════════════════
         function generatePalta(notes, includeDescending, ascCount, descCount) {
             const baseNote = notes[0];
             const offsets = notes.map(n => n - baseNote);
@@ -921,7 +1252,12 @@
             return result;
         }
 
-        // ── Render output (with data attributes for playback highlighting) ──
+        // ══════════════════════════════════════════════════════
+        // ── 3. RENDERER ─────────────────────────────────────
+        // Builds the DOM for the generated palta. Each swara span gets
+        // data-section/data-line/data-swar attributes used by the
+        // playback engine to highlight the currently playing note.
+        // ══════════════════════════════════════════════════════
         function renderPalta(palta, useShort, includeDescending, beatCount) {
             const container = document.getElementById('output-lines');
             container.innerHTML = '';
@@ -1112,9 +1448,40 @@
             return `<strong>Pattern:</strong> ${swaraNames.join(' ')} &nbsp;&nbsp;|&nbsp;&nbsp; <strong>Intervals:</strong> ${intervals.join(', ')}`;
         }
 
-        // ═══════════════════════════════════════════════════
-        // ── Audio Engine: Piano Synth via Web Audio API ────
-        // ═══════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════
+        // ── 4. AUDIO ENGINE ──────────────────────────────────
+        // All sound synthesis uses the Web Audio API (no samples).
+        //
+        // PIANO (3 variants):
+        //   Grand     — Additive synthesis: 10 sine partials with piano-string
+        //               inharmonicity (B coefficient), per-harmonic decay curves,
+        //               hammer noise burst, and soundboard body resonance.
+        //   Upright   — Same approach but fewer harmonics, faster decay,
+        //               mid-frequency EQ boost for "boxy" character.
+        //   Electric  — FM synthesis (Rhodes-style): sine carrier modulated by
+        //               sine at 1:1 ratio for the "bark", plus shimmer tine
+        //               and subtle tremolo LFO.
+        //
+        // HARMONIUM:
+        //   Sawtooth oscillators (natural reed harmonic series with 1/n rolloff)
+        //   through lowpass + peaking EQ filters. Reed configurations:
+        //     bass-male            — 2 reeds: bass (freq/2) + male (freq)
+        //     bass-male-female     — 3 reeds: + female (freq*2)
+        //     bass-male-male       — 3 reeds: + detuned male pair (chorus)
+        //     male-male-female-bass— 4 reeds: detuned males + female + bass
+        //     bass-male-female-female — 4 reeds: bass + male + detuned females
+        //     bass-bass-male-female— 4 reeds: detuned basses + male + female
+        //   Shared LFO at 4.5 Hz simulates bellows vibration (tremolo).
+        //
+        // COUPLERS:
+        //   Left  — Piano: freq/2 (octave below). Harmonium: freq/4 (2 oct below).
+        //   Right — Piano: freq*2 (octave above). Harmonium: freq*4 (2 oct above).
+        //
+        // FREQUENCY MAPPING:
+        //   Swaras use the major scale (Sa=unison, Re=+2, Ga=+4, Ma=+5, Pa=+7,
+        //   Dha=+9, Ni=+11 semitones). The base frequency of Sa is set by the
+        //   key selector (C=261.63 Hz, etc.).
+        // ══════════════════════════════════════════════════════
 
         // Shuddh swaras map to major scale intervals (semitones from Sa)
         const SWARA_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
@@ -1135,7 +1502,7 @@
         }
 
         // ── Piano dispatcher ─────────────────────────────
-        function createPianoNote(audioCtx, dest, freq, startTime, duration, pianoType, leftCoupler) {
+        function createPianoNote(audioCtx, dest, freq, startTime, duration, pianoType, leftCoupler, rightCoupler) {
             let createFn;
             if (pianoType === 'upright') createFn = createUprightPianoNote;
             else if (pianoType === 'electric') createFn = createElectricPianoNote;
@@ -1146,6 +1513,11 @@
             // Left coupler: play the same note one octave lower
             if (leftCoupler) {
                 oscillators.push(...createFn(audioCtx, dest, freq / 2, startTime, duration));
+            }
+
+            // Right coupler: play the same note one octave higher
+            if (rightCoupler) {
+                oscillators.push(...createFn(audioCtx, dest, freq * 2, startTime, duration));
             }
 
             return oscillators;
@@ -1465,29 +1837,54 @@
 
         // Synthesize a harmonium reed note
         // Uses sawtooth oscillators (natural reed harmonic series) + filters for authentic timbre
-        function createHarmoniumNote(audioCtx, dest, freq, startTime, duration, reedType, leftCoupler) {
+        function createHarmoniumNote(audioCtx, dest, freq, startTime, duration, reedType, leftCoupler, rightCoupler) {
             const oscillators = [];
             const reeds = [];
 
-            // Bass reed — one octave below
-            reeds.push({ freq: freq / 2, amp: 0.45, detune: 0 });
-
-            // Male reed(s)
-            if (reedType === 'bass-male-male') {
+            if (reedType === 'male-male-female-bass') {
+                // Male-Male-Female-Bass
                 reeds.push({ freq: freq, amp: 1.0, detune: -4 });
-                reeds.push({ freq: freq, amp: 0.95, detune: 6 }); // detuned pair = chorus beating
-            } else {
-                reeds.push({ freq: freq, amp: 1.0, detune: 0 });
-            }
-
-            // Female reed — one octave above
-            if (reedType === 'bass-male-female') {
+                reeds.push({ freq: freq, amp: 0.95, detune: 6 });
                 reeds.push({ freq: freq * 2, amp: 0.35, detune: 0 });
+                reeds.push({ freq: freq / 2, amp: 0.45, detune: 0 });
+            } else if (reedType === 'bass-male-female-female') {
+                // Bass-Male-Female-Female
+                reeds.push({ freq: freq / 2, amp: 0.45, detune: 0 });
+                reeds.push({ freq: freq, amp: 1.0, detune: 0 });
+                reeds.push({ freq: freq * 2, amp: 0.35, detune: -4 });
+                reeds.push({ freq: freq * 2, amp: 0.3, detune: 6 });
+            } else if (reedType === 'bass-bass-male-female') {
+                // Bass-Bass-Male-Female
+                reeds.push({ freq: freq / 2, amp: 0.45, detune: -4 });
+                reeds.push({ freq: freq / 2, amp: 0.4, detune: 6 });
+                reeds.push({ freq: freq, amp: 1.0, detune: 0 });
+                reeds.push({ freq: freq * 2, amp: 0.35, detune: 0 });
+            } else {
+                // Bass reed — one octave below
+                reeds.push({ freq: freq / 2, amp: 0.45, detune: 0 });
+
+                // Male reed(s)
+                if (reedType === 'bass-male-male') {
+                    reeds.push({ freq: freq, amp: 1.0, detune: -4 });
+                    reeds.push({ freq: freq, amp: 0.95, detune: 6 });
+                } else {
+                    reeds.push({ freq: freq, amp: 1.0, detune: 0 });
+                }
+
+                // Female reed — one octave above
+                if (reedType === 'bass-male-female') {
+                    reeds.push({ freq: freq * 2, amp: 0.35, detune: 0 });
+                }
             }
 
             // Left coupler — two octaves below
             if (leftCoupler) {
                 reeds.push({ freq: freq / 4, amp: 0.3, detune: 0 });
+            }
+
+            // Right coupler — two octaves above
+            if (rightCoupler) {
+                reeds.push({ freq: freq * 4, amp: 0.2, detune: 0 });
             }
 
             const volumeScale = 0.09 / Math.sqrt(reeds.length);
@@ -1584,7 +1981,25 @@
             return oscillators;
         }
 
-        // ── Timeline builders ────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // ── 5. PLAYBACK ENGINE ───────────────────────────────
+        // Schedules palta playback using Web Audio API timing.
+        //
+        // Architecture:
+        //   - A single AudioContext persists across repeat loops.
+        //   - buildAscTimeline / buildDescTimeline create arrays of events
+        //     (either 'beat' for metronome clicks or 'note' for swara notes).
+        //   - scheduleSegment() pre-schedules all audio nodes on the AudioContext
+        //     timeline, and sets up setTimeout callbacks for visual highlighting.
+        //   - For "Play Both" mode, aarohi is scheduled first, then avarohi is
+        //     chained 500ms before aarohi ends for seamless transition.
+        //   - Repeat is handled by re-calling scheduleIteration() at the end.
+        //
+        // Three playback modes:
+        //   'all'  — both aarohi + avarohi (Play Both button)
+        //   'asc'  — aarohi only (section play button)
+        //   'desc' — avarohi only (section play button)
+        // ══════════════════════════════════════════════════════
 
         function buildAscTimeline(palta, beatCount, skipIntroBeats) {
             const timeline = [];
@@ -1656,15 +2071,14 @@
             }
         }
 
-        // ── Playback engine (supports section play & repeat) ──
-
-        let currentPaltaData = null;
-        let currentParsedNotes = null;
-        let currentUseShort = false;
-        let ascLineCount = 7;
-        let descLineCount = 7;
-        let playbackState = null;
-        let activePlayBtn = null;
+        // ── Playback state ──
+        let currentPaltaData = null;    // Last generated palta object { ascending, descending }
+        let currentParsedNotes = null;  // Raw parsed note values from input
+        let currentUseShort = false;    // Whether to display short swara names (S R G vs Sa Re Ga)
+        let ascLineCount = 7;           // Number of ascending lines (adjustable via +/- buttons)
+        let descLineCount = 7;          // Number of descending lines
+        let playbackState = null;       // { audioCtx, timers, allOscillators } — null when stopped
+        let activePlayBtn = null;       // DOM button currently showing "Stop"
 
         function getPlaybackParams() {
             const key = document.getElementById('key-select').value;
@@ -1694,7 +2108,6 @@
             if (!currentPaltaData) return;
             stopPlayback();
 
-            const params = getPlaybackParams();
             let repeatId, buildFn;
 
             if (mode === 'asc') {
@@ -1705,11 +2118,7 @@
                 buildFn = (p) => buildDescTimeline(currentPaltaData, p.beatCount, p.skipTransitionBeats);
             } else {
                 repeatId = 'repeat-all';
-                buildFn = (p) => buildFullTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats, p.skipTransitionBeats);
             }
-
-            const timeline = buildFn(params);
-            if (timeline.length === 0) return;
 
             // Create one AudioContext that persists across repeat loops
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -1723,10 +2132,22 @@
             const timers = [];
 
             // Schedule one iteration and chain the next seamlessly on the same AudioContext
-            function scheduleIteration(audioStartTime, tl, iterParams) {
+            function getIterParams(p) {
+                const interval = 60 / p.tempo;
+                const dur = p.instrument === 'harmonium'
+                    ? interval
+                    : Math.max(interval * 2, 0.45);
+                return {
+                    key: p.key, onsetInterval: interval, noteDuration: dur,
+                    instrument: p.instrument, pianoType: p.pianoType,
+                    reedType: p.reedType, leftCoupler: p.leftCoupler,
+                };
+            }
+
+            // Schedule a timeline segment and return the audioTime at which the next segment starts
+            function scheduleSegment(audioStartTime, tl, iterParams) {
                 const { key, onsetInterval, noteDuration, instrument, pianoType, reedType, leftCoupler } = iterParams;
 
-                // Schedule audio (sample-accurate on the AudioContext clock)
                 for (let i = 0; i < tl.length; i++) {
                     const ev = tl[i];
                     const evTime = audioStartTime + i * onsetInterval;
@@ -1735,14 +2156,13 @@
                     } else {
                         const freq = noteNumToFreq(ev.noteNum, key);
                         if (instrument === 'harmonium') {
-                            allOscillators.push(...createHarmoniumNote(audioCtx, compressor, freq, evTime, noteDuration, reedType, leftCoupler));
+                            allOscillators.push(...createHarmoniumNote(audioCtx, compressor, freq, evTime, noteDuration, reedType, leftCoupler, false));
                         } else {
-                            allOscillators.push(...createPianoNote(audioCtx, compressor, freq, evTime, noteDuration, pianoType, leftCoupler));
+                            allOscillators.push(...createPianoNote(audioCtx, compressor, freq, evTime, noteDuration, pianoType, leftCoupler, false));
                         }
                     }
                 }
 
-                // Schedule visual highlighting (wall-clock setTimeout)
                 const baseDelay = (audioStartTime - audioCtx.currentTime) * 1000;
                 for (let i = 0; i < tl.length; i++) {
                     const timer = setTimeout(() => {
@@ -1751,47 +2171,71 @@
                     timers.push(timer);
                 }
 
-                // When the last note starts, decide whether to chain next iteration
-                const repeatCheckDelay = baseDelay + (tl.length - 1) * onsetInterval * 1000;
-                const repeatTimer = setTimeout(() => {
-                    const repeatCb = document.getElementById(repeatId);
-                    if (repeatCb && repeatCb.checked && playbackState) {
-                        // Seamlessly chain: next iteration starts exactly 1 beat after the last note
-                        const nextStart = audioStartTime + tl.length * onsetInterval;
-                        const freshParams = getPlaybackParams();
-                        const freshTimeline = buildFn(freshParams);
-                        const freshInterval = 60 / freshParams.tempo;
-                        const freshDuration = freshParams.instrument === 'harmonium'
-                            ? freshInterval
-                            : Math.max(freshInterval * 2, 0.45);
-                        scheduleIteration(nextStart, freshTimeline, {
-                            key: freshParams.key,
-                            onsetInterval: freshInterval,
-                            noteDuration: freshDuration,
-                            instrument: freshParams.instrument,
-                            pianoType: freshParams.pianoType,
-                            reedType: freshParams.reedType,
-                            leftCoupler: freshParams.leftCoupler,
-                        });
-                    } else {
-                        // No repeat — clean up after the last note rings out
-                        const cleanupTimer = setTimeout(() => finishPlayback(), onsetInterval * 1000 + 200);
-                        timers.push(cleanupTimer);
-                    }
-                }, repeatCheckDelay);
-                timers.push(repeatTimer);
+                return audioStartTime + tl.length * onsetInterval;
             }
 
-            const { key, tempo, instrument, pianoType, reedType, leftCoupler } = params;
-            const onsetInterval = 60 / tempo;
-            // Piano: long sustain (2x overlap). Harmonium: note ends when next starts.
-            const noteDuration = instrument === 'harmonium'
-                ? onsetInterval
-                : Math.max(onsetInterval * 2, 0.45);
+            // For 'all' mode: schedule aarohi, then chain avarohi with fresh params
+            // For 'asc'/'desc' mode: schedule a single section
+            // After all sections finish, handle repeat or cleanup
+            function scheduleIteration(audioStartTime) {
+                const p = getPlaybackParams();
+                const ip = getIterParams(p);
+                let nextStart = audioStartTime;
 
-            scheduleIteration(audioCtx.currentTime + 0.1, timeline, {
-                key, onsetInterval, noteDuration, instrument, pianoType, reedType, leftCoupler
-            });
+                if (mode === 'all') {
+                    // Schedule aarohi
+                    const ascTl = buildAscTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats);
+                    if (ascTl.length > 0) {
+                        nextStart = scheduleSegment(nextStart, ascTl, ip);
+                    }
+                    // Chain avarohi: schedule with fresh skip state read at this moment
+                    // (or defer to wall-clock time so user can toggle skip during aarohi)
+                    const ascEndDelay = (nextStart - audioCtx.currentTime) * 1000;
+                    const chainTimer = setTimeout(() => {
+                        if (!playbackState) return;
+                        const p2 = getPlaybackParams();
+                        const ip2 = getIterParams(p2);
+                        let descEnd = nextStart;
+                        if (currentPaltaData.descending && currentPaltaData.descending.length > 0) {
+                            const descTl = buildDescTimeline(currentPaltaData, p2.beatCount, p2.skipTransitionBeats);
+                            if (descTl.length > 0) {
+                                descEnd = scheduleSegment(nextStart, descTl, ip2);
+                            }
+                        }
+                        // After avarohi finishes, handle repeat
+                        const descEndDelay = (descEnd - audioCtx.currentTime) * 1000;
+                        const endTimer = setTimeout(() => {
+                            const repeatCb = document.getElementById(repeatId);
+                            if (repeatCb && repeatCb.checked && playbackState) {
+                                scheduleIteration(descEnd);
+                            } else {
+                                const cleanupTimer = setTimeout(() => finishPlayback(), ip2.onsetInterval * 1000 + 200);
+                                timers.push(cleanupTimer);
+                            }
+                        }, descEndDelay);
+                        timers.push(endTimer);
+                    }, Math.max(ascEndDelay - 500, 0)); // schedule avarohi 500ms before aarohi ends for seamless audio
+                    timers.push(chainTimer);
+                } else {
+                    const tl = buildFn(p);
+                    if (tl.length > 0) {
+                        nextStart = scheduleSegment(nextStart, tl, ip);
+                    }
+                    const endDelay = (nextStart - audioCtx.currentTime) * 1000;
+                    const repeatTimer = setTimeout(() => {
+                        const repeatCb = document.getElementById(repeatId);
+                        if (repeatCb && repeatCb.checked && playbackState) {
+                            scheduleIteration(nextStart);
+                        } else {
+                            const cleanupTimer = setTimeout(() => finishPlayback(), ip.onsetInterval * 1000 + 200);
+                            timers.push(cleanupTimer);
+                        }
+                    }, endDelay);
+                    timers.push(repeatTimer);
+                }
+            }
+
+            scheduleIteration(audioCtx.currentTime + 0.1);
 
             playbackState = { audioCtx, timers, allOscillators };
 
@@ -1924,7 +2368,11 @@
             outputCard.dataset.plainText = paltaToText(palta, currentUseShort, includeDesc, beatCount);
         }
 
-        // ── Event listeners ─────────────────────────────────
+        // ══════════════════════════════════════════════════════
+        // ── EVENT LISTENERS ──────────────────────────────────
+        // Wires up all UI controls. Dynamic elements (section play buttons,
+        // add/delete buttons) use event delegation on #output-lines.
+        // ══════════════════════════════════════════════════════
         document.getElementById('generate-btn').addEventListener('click', doGenerate);
 
         document.getElementById('sequence-input').addEventListener('keydown', (e) => {
@@ -1997,7 +2445,8 @@
             }
         });
 
-        // Show/hide instrument-specific options based on sound selection
+        // Show/hide instrument-specific options (palta section) based on sound selection.
+        // Also auto-sets left coupler default: on for piano, off for harmonium.
         function updateCouplerDefault() {
             const instrument = document.getElementById('sound-select').value;
             const pianoType = document.getElementById('piano-type-select').value;
@@ -2028,6 +2477,324 @@
             const input = document.getElementById('sequence-input').value;
             if (input.trim() && document.getElementById('output-card').classList.contains('visible')) {
                 doGenerate();
+            }
+        });
+        // ══════════════════════════════════════════════════════
+        // ── 6. MIDI KEYBOARD ─────────────────────────────────
+        // Connects to external MIDI keyboards via the Web MIDI API.
+        //
+        // Architecture:
+        //   - A persistent AudioContext (midiAudioCtx) stays open while connected.
+        //   - Each note-on creates oscillators via the shared synth functions
+        //     (createPianoNote / createHarmoniumNote) with a long max duration.
+        //   - A masterGain per note controls velocity and enables quick release.
+        //   - On note-off, the masterGain is faded to 0 (simulating damper).
+        //   - midiActiveNotes Map tracks all currently-sounding notes for cleanup.
+        //
+        // Features:
+        //   - Velocity sensitivity (MIDI velocity 0–127 → gain 0–1).
+        //   - Sustain pedal (MIDI CC 64): holds notes until pedal is released.
+        //   - Sustain checkbox (piano only): notes ring out naturally on key-up.
+        //   - Octave shift: ±3 octaves (adds ±36 to MIDI note number).
+        //   - Transpose: ±12 semitones (adds ±12 to MIDI note number).
+        //   - Register-dependent piano duration: bass ~3.2s, mid ~1.6s, treble ~0.7s.
+        //   - Register-dependent damper: bass ~180ms, treble ~60ms release.
+        //   - Auto-detects MIDI devices; shows dropdown if multiple are found.
+        //   - Handles device hot-plug/unplug via onstatechange.
+        // ══════════════════════════════════════════════════════
+
+        let midiAccess = null;    // WebMidi.MIDIAccess instance
+        let midiInput = null;       // Currently connected MIDIInput device
+        let midiAudioCtx = null;    // Persistent AudioContext for MIDI playback
+        let midiCompressor = null;  // DynamicsCompressor node (prevents clipping)
+        let midiActiveNotes = new Map();   // MIDI note → { oscillators, masterGain, release() }
+        let midiSustainPedal = false;      // True when hardware sustain pedal is held
+        let midiSustainedNotes = new Set(); // Notes being held by sustain pedal
+        let midiOctaveShift = 0;   // ±3 octaves (adds ±36 to MIDI note)
+        let midiTranspose = 0;     // ±12 semitones
+
+        function getMidiSoundParams() {
+            const coupler = document.getElementById('midi-coupler-select').value;
+            return {
+                instrument: document.getElementById('midi-sound-select').value,
+                pianoType: document.getElementById('midi-piano-type-select').value,
+                reedType: document.getElementById('midi-reed-select').value,
+                leftCoupler: coupler === 'left',
+                rightCoupler: coupler === 'right',
+                sustain: document.getElementById('midi-sustain').checked,
+            };
+        }
+
+        function ensureMidiAudioCtx() {
+            if (!midiAudioCtx || midiAudioCtx.state === 'closed') {
+                midiAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                midiCompressor = midiAudioCtx.createDynamicsCompressor();
+                midiCompressor.threshold.value = -20;
+                midiCompressor.knee.value = 20;
+                midiCompressor.ratio.value = 4;
+                midiCompressor.connect(midiAudioCtx.destination);
+            }
+            if (midiAudioCtx.state === 'suspended') {
+                midiAudioCtx.resume();
+            }
+        }
+
+        function midiNoteToFreq(midiNote) {
+            return 440 * Math.pow(2, (midiNote - 69) / 12);
+        }
+
+        function playMidiNote(note, velocity) {
+            ensureMidiAudioCtx();
+
+            // Release any existing note at this key
+            if (midiActiveNotes.has(note)) {
+                midiActiveNotes.get(note).release();
+                midiActiveNotes.delete(note);
+            }
+            midiSustainedNotes.delete(note);
+
+            const adjustedNote = note + (midiOctaveShift * 12) + midiTranspose;
+            const freq = midiNoteToFreq(adjustedNote);
+            const params = getMidiSoundParams();
+            const velScale = velocity / 127;
+
+            const masterGain = midiAudioCtx.createGain();
+            masterGain.gain.value = velScale;
+            masterGain.connect(midiCompressor);
+
+            const now = midiAudioCtx.currentTime;
+            let oscillators;
+            const isHarmonium = params.instrument === 'harmonium';
+
+            if (isHarmonium) {
+                oscillators = createHarmoniumNote(midiAudioCtx, masterGain, freq, now, 30, params.reedType, params.leftCoupler, params.rightCoupler);
+            } else {
+                // Register-dependent duration: bass ~3.2s, middle ~1.6s, treble ~0.7s
+                const pianoDur = Math.max(0.6, 3.6 * Math.pow(0.98, adjustedNote - 21));
+                oscillators = createPianoNote(midiAudioCtx, masterGain, freq, now, pianoDur, params.pianoType, params.leftCoupler, params.rightCoupler);
+            }
+
+            // Register-dependent damper: bass damps slower (~180ms), treble faster (~60ms)
+            const pianoReleaseTime = Math.max(0.05, 0.2 - adjustedNote * 0.0013);
+
+            midiActiveNotes.set(note, {
+                oscillators,
+                masterGain,
+                release() {
+                    if (!midiAudioCtx || midiAudioCtx.state === 'closed') return;
+                    const t = midiAudioCtx.currentTime;
+                    const val = masterGain.gain.value;
+                    if (val <= 0.0001) {
+                        for (const osc of oscillators) { try { osc.stop(); } catch(e) {} }
+                        masterGain.disconnect();
+                        return;
+                    }
+                    masterGain.gain.cancelScheduledValues(t);
+                    masterGain.gain.setValueAtTime(val, t);
+                    const releaseTime = isHarmonium ? 0.08 : pianoReleaseTime;
+                    masterGain.gain.exponentialRampToValueAtTime(0.0001, t + releaseTime);
+                    setTimeout(() => {
+                        for (const osc of oscillators) { try { osc.stop(); } catch(e) {} }
+                        try { masterGain.disconnect(); } catch(e) {}
+                    }, (releaseTime + 0.05) * 1000);
+                }
+            });
+        }
+
+        function releaseMidiNote(note) {
+            if (midiSustainPedal) {
+                midiSustainedNotes.add(note);
+                return;
+            }
+            // Sustain checkbox: piano notes ring out naturally without damping
+            const params = getMidiSoundParams();
+            if (params.sustain && params.instrument === 'piano') {
+                return;
+            }
+            const noteData = midiActiveNotes.get(note);
+            if (noteData) {
+                noteData.release();
+                midiActiveNotes.delete(note);
+            }
+        }
+
+        function releaseSustainedNotes() {
+            for (const note of midiSustainedNotes) {
+                const noteData = midiActiveNotes.get(note);
+                if (noteData) {
+                    noteData.release();
+                    midiActiveNotes.delete(note);
+                }
+            }
+            midiSustainedNotes.clear();
+        }
+
+        function releaseAllMidiNotes() {
+            for (const [note, noteData] of midiActiveNotes) {
+                noteData.release();
+            }
+            midiActiveNotes.clear();
+            midiSustainedNotes.clear();
+            midiSustainPedal = false;
+        }
+
+        function onMidiMessage(event) {
+            if (!event.data || event.data.length < 3) return;
+            const [status, note, velocity] = event.data;
+            const command = status & 0xf0;
+
+            if (command === 0x90 && velocity > 0) {
+                playMidiNote(note, velocity);
+            } else if (command === 0x80 || (command === 0x90 && velocity === 0)) {
+                releaseMidiNote(note);
+            } else if (command === 0xb0 && note === 64) {
+                // Sustain pedal
+                midiSustainPedal = velocity >= 64;
+                if (!midiSustainPedal) {
+                    releaseSustainedNotes();
+                }
+            }
+        }
+
+        function connectMidiDevice(input) {
+            if (midiInput) {
+                midiInput.onmidimessage = null;
+            }
+            midiInput = input;
+            midiInput.onmidimessage = onMidiMessage;
+
+            const status = document.getElementById('midi-status');
+            status.textContent = 'Connected: ' + (input.name || 'MIDI Device');
+            status.classList.add('active');
+
+            const btn = document.getElementById('midi-connect-btn');
+            btn.textContent = 'Disconnect';
+            btn.classList.add('connected');
+        }
+
+        function disconnectMidi() {
+            releaseAllMidiNotes();
+
+            if (midiInput) {
+                midiInput.onmidimessage = null;
+                midiInput = null;
+            }
+
+            const status = document.getElementById('midi-status');
+            status.textContent = 'Disconnected';
+            status.classList.remove('active');
+
+            const btn = document.getElementById('midi-connect-btn');
+            btn.textContent = 'Connect MIDI';
+            btn.classList.remove('connected');
+
+            document.getElementById('midi-device-select').style.display = 'none';
+        }
+
+        function populateMidiDevices() {
+            if (!midiAccess) return;
+
+            const deviceSelect = document.getElementById('midi-device-select');
+            deviceSelect.innerHTML = '';
+
+            const inputs = Array.from(midiAccess.inputs.values());
+
+            if (inputs.length === 0) {
+                document.getElementById('midi-status').textContent = 'No MIDI devices found';
+                document.getElementById('midi-status').classList.remove('active');
+                deviceSelect.style.display = 'none';
+                return;
+            }
+
+            inputs.forEach((input, idx) => {
+                const option = document.createElement('option');
+                option.value = input.id;
+                option.textContent = input.name || ('MIDI Input ' + (idx + 1));
+                deviceSelect.appendChild(option);
+            });
+
+            deviceSelect.style.display = inputs.length > 1 ? '' : 'none';
+            connectMidiDevice(inputs[0]);
+        }
+
+        async function toggleMidiConnection() {
+            if (midiInput) {
+                disconnectMidi();
+                return;
+            }
+
+            if (!navigator.requestMIDIAccess) {
+                document.getElementById('midi-status').textContent = 'Web MIDI not supported in this browser';
+                return;
+            }
+
+            try {
+                midiAccess = await navigator.requestMIDIAccess();
+                midiAccess.onstatechange = () => {
+                    if (midiInput) {
+                        const stillConnected = Array.from(midiAccess.inputs.values())
+                            .some(i => i.id === midiInput.id);
+                        if (!stillConnected) {
+                            disconnectMidi();
+                            populateMidiDevices();
+                        }
+                    }
+                };
+                populateMidiDevices();
+            } catch (err) {
+                document.getElementById('midi-status').textContent = 'MIDI access denied';
+            }
+        }
+
+        function formatShift(val) {
+            if (val > 0) return '+' + val;
+            return String(val);
+        }
+
+        // MIDI event listeners
+        document.getElementById('midi-connect-btn').addEventListener('click', toggleMidiConnection);
+
+        document.getElementById('midi-device-select').addEventListener('change', (e) => {
+            if (!midiAccess) return;
+            const input = Array.from(midiAccess.inputs.values())
+                .find(i => i.id === e.target.value);
+            if (input) connectMidiDevice(input);
+        });
+
+        document.getElementById('midi-sound-select').addEventListener('change', (e) => {
+            const isPiano = e.target.value === 'piano';
+            const isHarmonium = e.target.value === 'harmonium';
+            document.querySelectorAll('.midi-piano-only').forEach(el => {
+                el.classList.toggle('midi-visible', isPiano);
+            });
+            document.querySelectorAll('.midi-harmonium-only').forEach(el => {
+                el.classList.toggle('midi-visible', isHarmonium);
+            });
+        });
+
+        document.getElementById('midi-oct-down').addEventListener('click', () => {
+            if (midiOctaveShift > -3) {
+                midiOctaveShift--;
+                document.getElementById('midi-oct-value').textContent = formatShift(midiOctaveShift);
+            }
+        });
+        document.getElementById('midi-oct-up').addEventListener('click', () => {
+            if (midiOctaveShift < 3) {
+                midiOctaveShift++;
+                document.getElementById('midi-oct-value').textContent = formatShift(midiOctaveShift);
+            }
+        });
+
+        document.getElementById('midi-trans-down').addEventListener('click', () => {
+            if (midiTranspose > -12) {
+                midiTranspose--;
+                document.getElementById('midi-trans-value').textContent = formatShift(midiTranspose);
+            }
+        });
+        document.getElementById('midi-trans-up').addEventListener('click', () => {
+            if (midiTranspose < 12) {
+                midiTranspose++;
+                document.getElementById('midi-trans-value').textContent = formatShift(midiTranspose);
             }
         });
     </script>
