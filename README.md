@@ -32,11 +32,11 @@ Three categories of preset patterns:
 **Common patterns** — 8 standard palta starting sequences:
 - Sa Re Ga Ma, Sa Re Ga Re, Sa Re Sa Re Ga Re, Sa Ga Re Ma Ga Pa, Sa Re Ga Ma Pa, Sa Re Ga Ma Ga Re, Sa Re Ga Re Ga Ma, Sa Ma Ga Re
 
-**Special patterns** — Fixed-base patterns where Sa is paired with each ascending swara:
-- SR, SG, Sm, SP, SD, SN, SS' (Sa paired with each note going up)
-- RS, GS, mS, PS, DS, NS, S'S (each note paired back to Sa)
+**Special patterns** — Three types that don't use standard transposition:
+- Sa Re, Sa Ga, Sa ma, ... Sa Sa' (Sa paired with each ascending swara)
+- Re Sa, Ga Sa, ma Sa, ... Sa' Sa (each swara paired back to Sa)
+- Sa, Sa Pa, Sa ma Pa (expanding) — each line adds one more swara, ascending then descending within the same line: S → S P P S → S R m P P m R S → ... → S R G m P D N S' S' N D P m G R S. This pattern has no avarohi option (the checkbox is hidden).
 - Default tempo: 60 BPM (vs 102 BPM for regular paltas)
-- Aarohi walks up, avarohi mirrors back down from upper Sa
 
 **My patterns** — Custom saved patterns:
 - Sa Ga Sa Re, Sa Re Ga ma Sa Ga Re ma, Sa Re Re Sa Re Ga Re Sa, Sa .Ni Re .Ni Re Ga ma Ga
@@ -224,9 +224,11 @@ Swaras use the major scale (shuddh swaras):
 Add a `<button class="preset-btn" data-pattern="Sa Ga Re Ma">Sa Ga Re Ma</button>` inside the appropriate `.preset-chips` div. The event listener is already wired up via `querySelectorAll('.preset-btn:not(.special-preset-btn)')`.
 
 ### Adding a new special pattern type
-1. Add a new `else if` branch inside `generateSpecialPalta()` for the new type.
+1. Add a new `if (type === 'your-type')` branch inside `generateSpecialPalta()` for the new type.
 2. Add a `<button class="preset-btn special-preset-btn" data-special="your-type">Label</button>` in the special patterns `.preset-chips` div.
 3. The click handler is already wired via `querySelectorAll('.special-preset-btn')`.
+4. Add a label entry in the `labels` object inside `doGenerateSpecial()`.
+5. If the pattern has no avarohi, add a check in `doGenerateSpecial()` to hide `#avarohi-option` (see `sa-expand` for reference).
 
 ### Adding a completely new instrument
 1. Create a synth function: `createMyInstrumentNote(audioCtx, dest, freq, startTime, duration, ...params)` that returns an array of started oscillators/nodes.

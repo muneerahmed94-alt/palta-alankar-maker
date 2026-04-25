@@ -93,9 +93,12 @@
   for the next note. See trySplitContinuous() for the tokenizer logic.
 
   SPECIAL PATTERNS:
-  Two special pattern types that don't use standard transposition:
+  Three special pattern types that don't use standard transposition:
     - "sa-x": Sa paired with each ascending swara (SR, SG, Sm, SP, SD, SN, SS')
     - "x-sa": Each swara paired back to Sa (RS, GS, mS, PS, DS, NS, S'S)
+    - "sa-expand": Expanding pattern — each line adds one more swara:
+        S → S P P S → S R m P P m R S → ... → S R G m P D N S' S' N D P m G R S
+      This pattern has no avarohi (the Include Avarohi checkbox is hidden).
   Aarohi walks up the scale, Avarohi mirrors back down from upper Sa.
   Default tempo for special patterns is 60 BPM (vs 102 BPM for regular paltas).
   See generateSpecialPalta() and doGenerateSpecial() in JS.
@@ -1256,8 +1259,9 @@
             <div class="presets">
                 <div class="presets-label">Special patterns:</div>
                 <div class="preset-chips">
-                    <button class="preset-btn special-preset-btn" data-special="sa-x">SR, SG, Sm, SP, SD, SN, SS'</button>
-                    <button class="preset-btn special-preset-btn" data-special="x-sa">RS, GS, mS, PS, DS, NS, S'S</button>
+                    <button class="preset-btn special-preset-btn" data-special="sa-x">Sa Re, Sa Ga, Sa ma, Sa Pa, Sa Dha, Sa Ni, Sa Sa'</button>
+                    <button class="preset-btn special-preset-btn" data-special="x-sa">Re Sa, Ga Sa, ma Sa, Pa Sa, Dha Sa, Ni Sa, Sa' Sa</button>
+                    <button class="preset-btn special-preset-btn" data-special="sa-expand">Sa, Sa Pa, Sa ma Pa (expanding)</button>
                 </div>
             </div>
 
@@ -1351,7 +1355,7 @@
                     <label class="repeat-label"><input type="checkbox" id="repeat-all"> Repeat</label>
                 </div>
             </div>
-            <div class="options">
+            <div class="options" id="avarohi-option">
                 <label>
                     <input type="checkbox" id="include-descending" checked>
                     Include Avarohi (descending)
@@ -1706,10 +1710,33 @@
         // ── Special palta generator ──────────────────────────
         // "sa-x": Sa paired with each ascending swara: SR, SG, Sm, SP, SD, SN, SS'
         // "x-sa": Each ascending swara paired back to Sa: RS, GS, mS, PS, DS, NS, S'S
+        // "sa-expand": Expanding — each line adds one more swara, ascending then
+        //   descending within the same line. No separate avarohi section.
+        //   S → SPPS → SRmPPmRS → ... → SRGmPDNS'S'NDPmGRS
         // Aarohi walks up the scale, Avarohi mirrors back down.
         function generateSpecialPalta(type, includeDescending) {
             const sa = 7; // middle Sa
             const result = { ascending: [], descending: [], landingTop: null, landingBottom: null };
+
+            if (type === 'sa-expand') {
+                // Expanding pattern: each line adds one more swara, ascending then descending
+                // S=7 R=8 G=9 m=10 P=11 D=12 N=13 S'=14
+                // The scale steps used: S, P, R m P, R m P D, R m P D S', R G m P D S', R G m P D N S'
+                const expandSteps = [
+                    [sa],
+                    [sa, sa+4, sa+4, sa],
+                    [sa, sa+1, sa+3, sa+4, sa+4, sa+3, sa+1, sa],
+                    [sa, sa+1, sa+3, sa+4, sa+5, sa+5, sa+4, sa+3, sa+1, sa],
+                    [sa, sa+1, sa+3, sa+4, sa+5, sa+7, sa+7, sa+5, sa+4, sa+3, sa+1, sa],
+                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+7, sa+7, sa+5, sa+4, sa+3, sa+2, sa+1, sa],
+                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+6, sa+7, sa+7, sa+6, sa+5, sa+4, sa+3, sa+2, sa+1, sa],
+                ];
+                for (const line of expandSteps) {
+                    result.ascending.push(line);
+                }
+                result.landingTop = sa + 7;
+                return result;
+            }
 
             // Ascending: pair Sa with Re, Ga, Ma, Pa, Dha, Ni, Sa'
             for (let step = 1; step <= 7; step++) {
@@ -2803,6 +2830,7 @@
             stopPlayback();
             currentSpecialType = null;
             setTempo(102);
+            document.getElementById('avarohi-option').style.display = '';
 
             const input = document.getElementById('sequence-input').value;
             const includeDesc = document.getElementById('include-descending').checked;
@@ -2857,10 +2885,21 @@
             currentSpecialType = type;
             setTempo(60);
 
-            const includeDesc = document.getElementById('include-descending').checked;
             const beatCount = parseInt(document.getElementById('beat-select').value);
             const errorContainer = document.getElementById('error-container');
             const outputCard = document.getElementById('output-card');
+
+            // sa-expand has no avarohi — force it off and hide the checkbox
+            const avarohiOption = document.getElementById('avarohi-option');
+            if (type === 'sa-expand') {
+                document.getElementById('include-descending').checked = false;
+                avarohiOption.style.display = 'none';
+            } else {
+                avarohiOption.style.display = '';
+            }
+            const includeDesc = type === 'sa-expand'
+                ? false
+                : document.getElementById('include-descending').checked;
 
             errorContainer.innerHTML = '';
             outputCard.classList.remove('visible');
@@ -2868,7 +2907,12 @@
             currentParsedNotes = [7]; // Sa (middle)
             currentUseShort = true;
 
-            const label = type === 'sa-x' ? 'SR, SG, Sm, SP, SD, SN, SS\u2019' : 'RS, GS, mS, PS, DS, NS, S\u2019S';
+            const labels = {
+                'sa-x': 'Sa Re, Sa Ga, Sa ma, Sa Pa, Sa Dha, Sa Ni, Sa Sa\u2019',
+                'x-sa': 'Re Sa, Ga Sa, ma Sa, Pa Sa, Dha Sa, Ni Sa, Sa\u2019 Sa',
+                'sa-expand': 'Sa, Sa Pa, Sa ma Pa (expanding)',
+            };
+            const label = labels[type];
             document.getElementById('sequence-input').value = label;
 
             const palta = generateSpecialPalta(type, includeDesc);
