@@ -25,18 +25,22 @@ The app follows the standard Indian classical notation convention:
 - **Teevra Ma**: uppercase **M**
 - Example: `SRGmPDNS` = all Shuddh; `SRGMPDNS` = with Teevra Ma
 - On "Generate", the input text field auto-corrects to match the selected swara variants (e.g., typing `SRG` with Komal Ga selected becomes `S R g`)
+- All preset button labels (common, special, my patterns) dynamically update when swara variants are toggled on the piano selector
 
 ### Pattern Presets
 Three categories of preset patterns:
 
-**Common patterns** — 8 standard palta starting sequences:
-- Sa Re Ga Ma, Sa Re Ga Re, Sa Re Sa Re Ga Re, Sa Ga Re Ma Ga Pa, Sa Re Ga Ma Pa, Sa Re Ga Ma Ga Re, Sa Re Ga Re Ga Ma, Sa Ma Ga Re
+**Common patterns** — 12 palta starting sequences, organized by complexity:
+- Repetitions: Sa Sa, Sa Sa Sa, Sa Sa Sa Sa
+- Ascending pairs/groups: Sa Re, Sa Ga, Sa Re Ga, Sa Re Ga ma, Sa Re Ga ma Pa, Sa Re Ga ma Pa Dha
+- With direction changes: Sa Re Sa, Sa Re Ga Re Sa, Sa Re Ga Sa Re
 
-**Special patterns** — Three types that don't use standard transposition:
+**Special patterns** — Four types that don't use standard transposition:
+- Sa Re Ga ma Pa Dha Ni Sa' (scale) — full ascending scale with avarohi support
 - Sa Re, Sa Ga, Sa ma, ... Sa Sa' (Sa paired with each ascending swara)
 - Re Sa, Ga Sa, ma Sa, ... Sa' Sa (each swara paired back to Sa)
-- Sa, Sa Pa, Sa ma Pa (expanding) — each line adds one more swara, ascending then descending within the same line: S → S P P S → S R m P P m R S → ... → S R G m P D N S' S' N D P m G R S. This pattern has no avarohi option (the checkbox is hidden).
-- Default tempo: 60 BPM (vs 102 BPM for regular paltas)
+- Sa, Sa Pa, Sa ma Pa (expanding) — each line adds one more swara. With "Include Avarohi" checked, each line mirrors ascending + descending with the top note doubled: S → S P P S → S m P P m S → ... → S R G m P D N S' S' N D P m G R S. Unchecked: ascending only (S, S P, S m P, ...).
+- Default tempo: 60 BPM for sa-x/x-sa/expanding, 102 BPM for scale
 
 **My patterns** — Custom saved patterns:
 - Sa Ga Sa Re, Sa Re Ga ma Sa Ga Re ma, Sa Re Re Sa Re Ga Re Sa, Sa .Ni Re .Ni Re Ga ma Ga
@@ -47,7 +51,8 @@ Three categories of preset patterns:
 - Octave markers work as prefix or suffix: `.N`, `N.`, `'S`, `S'` all valid
 - **Nearest-octave auto-resolution**: When no octave marker is given, each note after the first is placed in the octave nearest to the previous note (e.g., `SNSN` becomes `S .N S .N` — N below Sa, not 6 steps above)
 - Continuous strings support embedded octave markers: `S.NS.NSRGM` parses correctly
-- Generates 7 ascending (aarohi) and 7 descending (avarohi) lines
+- **Preset patterns** auto-calculate line count so the last line ends exactly at Sa'. Formula: `lineCount = 8 - maxOffset` (e.g., SS = 8 lines, SR = 7, SRGm = 5, SRGmPD = 3)
+- **Custom text input** uses a fixed 7 lines
 - **Include Avarohi** checkbox in output card — live toggle to show/hide descending section
 - Add or remove lines with +/- buttons on the last line
 - Copy generated palta as plain text
@@ -156,6 +161,7 @@ Schedules notes on the Web Audio API timeline for sample-accurate timing. Uses `
 - `doGenerateSpecial(type)` — Generates special patterns (sa-x or x-sa), sets tempo to 60 BPM.
 - `reRenderPalta()` — Re-generates and re-renders the current palta (handles both standard and special via `currentSpecialType` flag). Called when swara variants, include avarohi, or line counts change.
 - `updateSwaraDisplayName()` — Updates display name arrays when a variant is toggled. Handles the special Ma convention (Shuddh=lowercase, Teevra=uppercase).
+- `updatePresetLabels()` — Re-renders all preset button labels (common, special, my patterns) and the pattern-info text using the current display name arrays. Called when swara variants change.
 - `setTempo(bpm)` — Sets both the slider and input to the given BPM value.
 
 #### 6. MIDI Keyboard

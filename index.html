@@ -29,8 +29,8 @@
     1. Sa = key selector     — sets the root note (C through B)
     2. Swara Selector        — chromatic piano keyboard with fixed Western note labels
                                 (C–B) and movable swara labels that shift with Sa =
-    3. Common patterns       — 8 standard palta presets (Sa Re Ga Ma, etc.)
-    4. Special patterns      — SR/SG/Sm/.../SS' and RS/GS/mS/.../S'S
+    3. Common patterns       — 12 palta presets (repetitions, ascending, direction changes)
+    4. Special patterns      — scale, SR/SG pairs, RS/GS pairs, expanding
     5. My patterns           — user's custom saved patterns
     6. Custom text input     — "Generate your own palta/alankar which starts with"
     7. Generate button
@@ -77,6 +77,14 @@
   This convention is implemented via SWARAS_SHORT_DISPLAY / SWARAS_FULL_DISPLAY
   arrays, updated by updateSwaraDisplayName() when the Swara Selector changes.
   On Generate, the input text field auto-corrects to match the selected variants.
+  All preset button labels (common, special, my patterns) also update dynamically
+  via updatePresetLabels() when swara variants are toggled.
+
+  LINE COUNT AUTO-CALCULATION:
+  Preset patterns auto-calculate the number of ascending/descending lines so
+  the last line ends exactly at Sa'. Formula: lineCount = 8 - maxOffset, where
+  maxOffset is the highest interval in the pattern. Custom text input uses a
+  fixed 7 lines. The +/- buttons adjust from either starting point.
 
   NEAREST-OCTAVE PARSING:
   When the user omits explicit octave markers (. or '), each swara after the
@@ -1245,23 +1253,27 @@
             <div class="presets">
                 <div class="presets-label">Common patterns:</div>
                 <div class="preset-chips">
-                    <button class="preset-btn" data-pattern="Sa Re Ga Ma">Sa Re Ga Ma</button>
-                    <button class="preset-btn" data-pattern="Sa Re Ga Re">Sa Re Ga Re</button>
-                    <button class="preset-btn" data-pattern="Sa Re Sa Re Ga Re">Sa Re Sa Re Ga Re</button>
-                    <button class="preset-btn" data-pattern="Sa Ga Re Ma Ga Pa">Sa Ga Re Ma Ga Pa</button>
-                    <button class="preset-btn" data-pattern="Sa Re Ga Ma Pa">Sa Re Ga Ma Pa</button>
-                    <button class="preset-btn" data-pattern="Sa Re Ga Ma Ga Re">Sa Re Ga Ma Ga Re</button>
-                    <button class="preset-btn" data-pattern="Sa Re Ga Re Ga Ma">Sa Re Ga Re Ga Ma</button>
-                    <button class="preset-btn" data-pattern="Sa Ma Ga Re">Sa Ma Ga Re</button>
+                    <button class="preset-btn" data-pattern="SS">Sa Sa</button>
+                    <button class="preset-btn" data-pattern="SSS">Sa Sa Sa</button>
+                    <button class="preset-btn" data-pattern="SSSS">Sa Sa Sa Sa</button>
+                    <button class="preset-btn" data-pattern="SR">Sa Re</button>
+                    <button class="preset-btn" data-pattern="SG">Sa Ga</button>
+                    <button class="preset-btn" data-pattern="SRG">Sa Re Ga</button>
+                    <button class="preset-btn" data-pattern="SRGm">Sa Re Ga ma</button>
+                    <button class="preset-btn" data-pattern="SRGmP">Sa Re Ga ma Pa</button>
+                    <button class="preset-btn" data-pattern="SRGmPD">Sa Re Ga ma Pa Dha</button>
+                    <button class="preset-btn" data-pattern="SRS">Sa Re Sa</button>
+                    <button class="preset-btn" data-pattern="SRGRS">Sa Re Ga Re Sa</button>
+                    <button class="preset-btn" data-pattern="SRGSR">Sa Re Ga Sa Re</button>
                 </div>
             </div>
 
             <div class="presets">
                 <div class="presets-label">Special patterns:</div>
                 <div class="preset-chips">
+                    <button class="preset-btn special-preset-btn" data-special="scale">Sa Re Ga ma Pa Dha Ni Sa' (scale)</button>
                     <button class="preset-btn special-preset-btn" data-special="sa-x">Sa Re, Sa Ga, Sa ma, Sa Pa, Sa Dha, Sa Ni, Sa Sa'</button>
                     <button class="preset-btn special-preset-btn" data-special="x-sa">Re Sa, Ga Sa, ma Sa, Pa Sa, Dha Sa, Ni Sa, Sa' Sa</button>
-                    <button class="preset-btn special-preset-btn" data-special="scale">Sa Re Ga ma Pa Dha Ni Sa' (scale)</button>
                     <button class="preset-btn special-preset-btn" data-special="sa-expand">Sa, Sa Pa, Sa ma Pa (expanding)</button>
                 </div>
             </div>
@@ -1731,20 +1743,33 @@
             }
 
             if (type === 'sa-expand') {
-                // Expanding pattern: each line adds one more swara, ascending then descending
-                // S=7 R=8 G=9 m=10 P=11 D=12 N=13 S'=14
-                // The scale steps used: S, P, R m P, R m P D, R m P D S', R G m P D S', R G m P D N S'
-                const expandSteps = [
+                // Expanding pattern: each line adds one more swara.
+                // With includeDescending: ascending + descending in same line (S, SPPS, SRmPPmRS, ...)
+                // Without: ascending only (S, SP, SmP, SRmP, ...)
+                const ascSteps = [
                     [sa],
-                    [sa, sa+4, sa+4, sa],
-                    [sa, sa+1, sa+3, sa+4, sa+4, sa+3, sa+1, sa],
-                    [sa, sa+1, sa+3, sa+4, sa+5, sa+5, sa+4, sa+3, sa+1, sa],
-                    [sa, sa+1, sa+3, sa+4, sa+5, sa+7, sa+7, sa+5, sa+4, sa+3, sa+1, sa],
-                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+7, sa+7, sa+5, sa+4, sa+3, sa+2, sa+1, sa],
-                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+6, sa+7, sa+7, sa+6, sa+5, sa+4, sa+3, sa+2, sa+1, sa],
+                    [sa, sa+4],
+                    [sa, sa+3, sa+4],
+                    [sa, sa+1, sa+3, sa+4],
+                    [sa, sa+1, sa+3, sa+4, sa+5],
+                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5],
+                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+6],
+                    [sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+6, sa+7],
                 ];
-                for (const line of expandSteps) {
-                    result.ascending.push(line);
+                if (includeDescending) {
+                    // Mirror each line: ascending + full reverse (top note doubled)
+                    // e.g. S R m P → S R m P P m R S
+                    for (const asc of ascSteps) {
+                        if (asc.length <= 1) {
+                            result.ascending.push(asc);
+                        } else {
+                            result.ascending.push([...asc, ...asc.slice().reverse()]);
+                        }
+                    }
+                } else {
+                    for (const asc of ascSteps) {
+                        result.ascending.push(asc);
+                    }
                 }
                 result.landingTop = sa + 7;
                 return result;
@@ -1899,7 +1924,10 @@
             }
 
             // Ascending header with play/repeat
-            container.appendChild(createDirectionHeader('Aarohi (Ascending)', 'play-asc', 'repeat-asc'));
+            const ascTitle = (currentSpecialType === 'sa-expand' && includeDescending)
+                ? 'Aarohi & Avarohi (Ascending & Descending)'
+                : 'Aarohi (Ascending)';
+            container.appendChild(createDirectionHeader(ascTitle, 'play-asc', 'repeat-asc'));
 
             // Beat count line before aarohi
             if (beatCount > 0) {
@@ -2617,6 +2645,7 @@
         let ascLineCount = 7;           // Number of ascending lines (adjustable via +/- buttons)
         let descLineCount = 7;          // Number of descending lines
         let currentSpecialType = null;  // null = normal palta, 'sa-x' or 'x-sa' = special
+        let currentIsPreset = false;    // true when generated from a preset button
         let playbackState = null;       // { audioCtx, timers, allOscillators } — null when stopped
         let activePlayBtn = null;       // DOM button currently showing "Stop"
 
@@ -2838,9 +2867,10 @@
             document.getElementById('tempo-input').value = bpm;
         }
 
-        function doGenerate() {
+        function doGenerate(isPreset) {
             stopPlayback();
             currentSpecialType = null;
+            currentIsPreset = !!isPreset;
             setTempo(102);
             document.getElementById('avarohi-option').style.display = '';
             document.getElementById('include-descending').checked = true;
@@ -2865,9 +2895,16 @@
                 return;
             }
 
-            // Reset line counts on fresh generate
-            ascLineCount = 7;
-            descLineCount = 7;
+            // Calculate line count: presets auto-calc to end at Sa', custom input uses 7
+            if (isPreset) {
+                const baseNote = parsed.notes[0];
+                const maxOffset = Math.max(...parsed.notes.map(n => n - baseNote));
+                ascLineCount = 8 - maxOffset;
+                descLineCount = 8 - maxOffset;
+            } else {
+                ascLineCount = 7;
+                descLineCount = 7;
+            }
             currentParsedNotes = parsed.notes;
             currentUseShort = parsed.useShort;
 
@@ -2896,23 +2933,17 @@
         function doGenerateSpecial(type) {
             stopPlayback();
             currentSpecialType = type;
-            setTempo(60);
+            setTempo(type === 'scale' ? 102 : 60);
 
             const beatCount = parseInt(document.getElementById('beat-select').value);
             const errorContainer = document.getElementById('error-container');
             const outputCard = document.getElementById('output-card');
 
-            // sa-expand has no avarohi — force it off and hide the checkbox
-            // All other special patterns restore the checkbox to visible and checked
+            // All special patterns show the avarohi checkbox and default it to checked
             const avarohiOption = document.getElementById('avarohi-option');
             const avarohiCheckbox = document.getElementById('include-descending');
-            if (type === 'sa-expand') {
-                avarohiCheckbox.checked = false;
-                avarohiOption.style.display = 'none';
-            } else {
-                avarohiOption.style.display = '';
-                avarohiCheckbox.checked = true;
-            }
+            avarohiOption.style.display = '';
+            avarohiCheckbox.checked = true;
             const includeDesc = avarohiCheckbox.checked;
 
             errorContainer.innerHTML = '';
@@ -3004,6 +3035,49 @@
             }
         }
 
+        // ── Update all preset button labels to reflect current swara variants ──
+        // Called when a swara variant is toggled on the piano selector.
+        // Common/My buttons: re-parses data-pattern and renders with current display names.
+        // Special buttons: rebuilds label text from SWARAS_FULL_DISPLAY array.
+        // Also updates the pattern-info text in the output card for special patterns.
+        function updatePresetLabels() {
+            const d = SWARAS_FULL_DISPLAY;
+            document.querySelectorAll('.preset-btn[data-pattern]').forEach(btn => {
+                const parsed = parseSequence(btn.dataset.pattern);
+                if (!parsed.error) {
+                    btn.textContent = parsed.notes.map(n => numToSwara(n, false).text).join(' ');
+                }
+            });
+            document.querySelectorAll('.special-preset-btn').forEach(btn => {
+                const type = btn.dataset.special;
+                if (type === 'scale') {
+                    btn.textContent = d[0] + ' ' + d[1] + ' ' + d[2] + ' ' + d[3] + ' ' + d[4] + ' ' + d[5] + ' ' + d[6] + ' ' + d[0] + '\u2019 (scale)';
+                } else if (type === 'sa-x') {
+                    btn.textContent = [d[1], d[2], d[3], d[4], d[5], d[6]].map(s => d[0] + ' ' + s).join(', ') + ', ' + d[0] + ' ' + d[0] + '\u2019';
+                } else if (type === 'x-sa') {
+                    btn.textContent = [d[1], d[2], d[3], d[4], d[5], d[6]].map(s => s + ' ' + d[0]).join(', ') + ', ' + d[0] + '\u2019 ' + d[0];
+                } else if (type === 'sa-expand') {
+                    btn.textContent = d[0] + ', ' + d[0] + ' ' + d[4] + ', ' + d[0] + ' ' + d[3] + ' ' + d[4] + ' (expanding)';
+                }
+            });
+            if (currentSpecialType && document.getElementById('output-card').classList.contains('visible')) {
+                const el = document.getElementById('pattern-info');
+                const labels = {
+                    'sa-x': [d[1], d[2], d[3], d[4], d[5], d[6]].map(s => d[0] + ' ' + s).join(', ') + ', ' + d[0] + ' ' + d[0] + '\u2019',
+                    'x-sa': [d[1], d[2], d[3], d[4], d[5], d[6]].map(s => s + ' ' + d[0]).join(', ') + ', ' + d[0] + '\u2019 ' + d[0],
+                    'scale': d[0] + ' ' + d[1] + ' ' + d[2] + ' ' + d[3] + ' ' + d[4] + ' ' + d[5] + ' ' + d[6] + ' ' + d[0] + '\u2019 (scale)',
+                    'sa-expand': d[0] + ', ' + d[0] + ' ' + d[4] + ', ' + d[0] + ' ' + d[3] + ' ' + d[4] + ' (expanding)',
+                };
+                if (labels[currentSpecialType]) {
+                    el.textContent = '';
+                    const strong = document.createElement('strong');
+                    strong.textContent = 'Special pattern: ';
+                    el.appendChild(strong);
+                    el.appendChild(document.createTextNode(labels[currentSpecialType]));
+                }
+            }
+        }
+
         // ══════════════════════════════════════════════════════
         // ── EVENT LISTENERS ──────────────────────────────────
         // Wires up all UI controls. Dynamic elements (section play buttons,
@@ -3019,7 +3093,7 @@
         document.querySelectorAll('.preset-btn:not(.special-preset-btn)').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.getElementById('sequence-input').value = btn.dataset.pattern;
-                doGenerate();
+                doGenerate(true);
             });
         });
 
@@ -3126,11 +3200,7 @@
         // Include Avarohi checkbox — re-render to show/hide descending section
         document.getElementById('include-descending').addEventListener('change', () => {
             if (document.getElementById('output-card').classList.contains('visible')) {
-                if (currentSpecialType) {
-                    doGenerateSpecial(currentSpecialType);
-                } else if (currentParsedNotes) {
-                    reRenderPalta();
-                }
+                reRenderPalta();
             }
         });
 
@@ -3235,10 +3305,16 @@
             }
 
             updatePianoSwaraLabels();
+            updatePresetLabels();
 
             if (currentParsedNotes) {
                 reRenderPalta();
-                document.getElementById('pattern-info').innerHTML = describePattern(currentParsedNotes, currentUseShort);
+                if (!currentSpecialType) {
+                    document.getElementById('pattern-info').textContent = '';
+                    const el = document.getElementById('pattern-info');
+                    const parsed = describePattern(currentParsedNotes, currentUseShort);
+                    el.insertAdjacentHTML('beforeend', parsed);
+                }
             }
         });
 
