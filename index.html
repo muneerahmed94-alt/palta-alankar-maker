@@ -1261,6 +1261,7 @@
                 <div class="preset-chips">
                     <button class="preset-btn special-preset-btn" data-special="sa-x">Sa Re, Sa Ga, Sa ma, Sa Pa, Sa Dha, Sa Ni, Sa Sa'</button>
                     <button class="preset-btn special-preset-btn" data-special="x-sa">Re Sa, Ga Sa, ma Sa, Pa Sa, Dha Sa, Ni Sa, Sa' Sa</button>
+                    <button class="preset-btn special-preset-btn" data-special="scale">Sa Re Ga ma Pa Dha Ni Sa' (scale)</button>
                     <button class="preset-btn special-preset-btn" data-special="sa-expand">Sa, Sa Pa, Sa ma Pa (expanding)</button>
                 </div>
             </div>
@@ -1717,6 +1718,17 @@
         function generateSpecialPalta(type, includeDescending) {
             const sa = 7; // middle Sa
             const result = { ascending: [], descending: [], landingTop: null, landingBottom: null };
+
+            if (type === 'scale') {
+                // Full scale: S R G m P D N S' (ascending), S' N D P m G R S (descending)
+                result.ascending.push([sa, sa+1, sa+2, sa+3, sa+4, sa+5, sa+6, sa+7]);
+                result.landingTop = sa + 7;
+                if (includeDescending) {
+                    result.descending.push([sa+7, sa+6, sa+5, sa+4, sa+3, sa+2, sa+1, sa]);
+                    result.landingBottom = sa;
+                }
+                return result;
+            }
 
             if (type === 'sa-expand') {
                 // Expanding pattern: each line adds one more swara, ascending then descending
@@ -2831,6 +2843,7 @@
             currentSpecialType = null;
             setTempo(102);
             document.getElementById('avarohi-option').style.display = '';
+            document.getElementById('include-descending').checked = true;
 
             const input = document.getElementById('sequence-input').value;
             const includeDesc = document.getElementById('include-descending').checked;
@@ -2890,16 +2903,17 @@
             const outputCard = document.getElementById('output-card');
 
             // sa-expand has no avarohi — force it off and hide the checkbox
+            // All other special patterns restore the checkbox to visible and checked
             const avarohiOption = document.getElementById('avarohi-option');
+            const avarohiCheckbox = document.getElementById('include-descending');
             if (type === 'sa-expand') {
-                document.getElementById('include-descending').checked = false;
+                avarohiCheckbox.checked = false;
                 avarohiOption.style.display = 'none';
             } else {
                 avarohiOption.style.display = '';
+                avarohiCheckbox.checked = true;
             }
-            const includeDesc = type === 'sa-expand'
-                ? false
-                : document.getElementById('include-descending').checked;
+            const includeDesc = avarohiCheckbox.checked;
 
             errorContainer.innerHTML = '';
             outputCard.classList.remove('visible');
@@ -2910,6 +2924,7 @@
             const labels = {
                 'sa-x': 'Sa Re, Sa Ga, Sa ma, Sa Pa, Sa Dha, Sa Ni, Sa Sa\u2019',
                 'x-sa': 'Re Sa, Ga Sa, ma Sa, Pa Sa, Dha Sa, Ni Sa, Sa\u2019 Sa',
+                'scale': 'Sa Re Ga ma Pa Dha Ni Sa\u2019 (scale)',
                 'sa-expand': 'Sa, Sa Pa, Sa ma Pa (expanding)',
             };
             const label = labels[type];
