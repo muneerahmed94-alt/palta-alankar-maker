@@ -13,7 +13,7 @@
   ARCHITECTURE (single-file, no build step):
   - CSS: All styles are inline in <style> (warm Indian-music-themed palette).
   - HTML: Three card sections — Input, Output, MIDI Keyboard.
-  - JS:  Five subsystems, in order:
+  - JS:  Six subsystems, in order:
         1. Swara Parser      — converts text input ("Sa Re Ga") to numeric note values
         2. Palta Generator    — generates ascending/descending lines from a pattern
         3. Renderer           — builds the DOM for the generated palta display
@@ -26,6 +26,42 @@
     Lower octave (mandra saptak): 0–6   (.Sa .Re .Ga .Ma .Pa .Dha .Ni)
     Middle octave (madhya saptak): 7–13  (Sa Re Ga Ma Pa Dha Ni)
     Upper octave (taar saptak):   14–20  (Sa' Re' Ga' Ma' Pa' Dha' Ni')
+
+  SWARA VARIANTS (Komal / Teevra):
+  Indian classical music uses variants of 5 swaras (Sa and Pa are always fixed):
+    - Re: Shuddh (2 semitones) or Komal (1 semitone)
+    - Ga: Shuddh (4 semitones) or Komal (3 semitones)
+    - Ma: Shuddh (5 semitones) or Teevra (6 semitones)
+    - Dha: Shuddh (9 semitones) or Komal (8 semitones)
+    - Ni: Shuddh (11 semitones) or Komal (10 semitones)
+
+  A piano-keyboard-style UI ("Swara Selector") lets users toggle between
+  Shuddh and Komal/Teevra for each swara. This dynamically updates
+  SWARA_SEMITONES[], which controls frequency mapping for both palta
+  playback and MIDI keyboard. See SWARA_VARIANTS[] in JS.
+
+  DISPLAY NOTATION CONVENTION (Pt Ramanuj Dasgupta style):
+    - Shuddh swaras: uppercase — S R G P D N
+    - Shuddh Ma: lowercase m (because Teevra Ma is the uppercase variant)
+    - Komal swaras: lowercase — r g d n
+    - Teevra Ma: uppercase M
+    - Example: SRGmPDNS = all Shuddh; SRGMPDNS = with Teevra Ma
+  This convention is implemented via SWARAS_SHORT_DISPLAY / SWARAS_FULL_DISPLAY
+  arrays, updated by updateSwaraDisplayName() when the Swara Selector changes.
+
+  NEAREST-OCTAVE PARSING:
+  When the user omits explicit octave markers (. or '), each swara after the
+  first is placed in the octave nearest to the previous note. This allows
+  natural input like "SNSN" to produce "S .N S .N" (N below Sa) instead of
+  "S N S N" (N six steps above Sa). Explicit markers always take precedence.
+  See nearestOctave() and the explicitOctave flag in parseSwara().
+
+  OCTAVE MARKER FLEXIBILITY:
+  Octave markers can be placed before OR after a swara token:
+    - Lower octave: .N or N. or .Ni or Ni.
+    - Upper octave: 'S or S' or 'Sa or Sa'
+  In continuous strings (e.g. "S.NS.NSRGM"), the dot is treated as a prefix
+  for the next note. See trySplitContinuous() for the tokenizer logic.
 
   SOUND SYNTHESIS:
   - Piano: Additive synthesis with inharmonicity modeling, hammer noise, body
@@ -169,6 +205,137 @@
             background: #bf360c;
             color: white;
             border-color: #bf360c;
+        }
+
+        /* ── Swara Selector (Piano Layout) ────────────────── */
+        /* Full chromatic 12-key piano (7 white + 5 black) with FIXED Western note
+           labels (C, C#, D, ..., B). Swara labels (Sa, Re, ...) are overlaid and
+           repositioned dynamically when "Sa =" key changes. Each key is identified
+           by data-chromatic (0–11). The JS function updatePianoSwaraLabels() maps
+           SWARA_SEMITONES to chromatic positions and places swara labels on the
+           correct keys. Clicking a key with a swara label toggles its variant. */
+        .swara-piano {
+            margin-bottom: 1.4rem;
+        }
+
+        .swara-piano-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: #795548;
+            margin-bottom: 0.5rem;
+        }
+
+        .swara-piano-keys {
+            position: relative;
+            display: flex;
+            height: 140px;
+            max-width: 490px;
+        }
+
+        .swara-key-white {
+            width: 70px;
+            height: 140px;
+            background: #fdf6e3;
+            border: 2px solid #d7ccc8;
+            border-radius: 0 0 8px 8px;
+            cursor: default;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding-bottom: 6px;
+            font-size: 0.72rem;
+            font-weight: 400;
+            color: #8d6e63;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .swara-key-white + .swara-key-white {
+            margin-left: -2px;
+        }
+
+        .swara-key-white.has-swara {
+            cursor: pointer;
+        }
+
+        .swara-key-white.has-swara:hover {
+            background: #fff8e1;
+        }
+
+        .swara-key-white.selected {
+            background: #fff3e0;
+            border-color: #bf360c;
+            color: #bf360c;
+            font-weight: 600;
+            box-shadow: inset 0 -4px 0 #bf360c;
+        }
+
+        .swara-key-white.fixed {
+            cursor: default;
+            background: #fff3e0;
+            border-color: #bf360c;
+            color: #bf360c;
+            font-weight: 600;
+            box-shadow: inset 0 -4px 0 #bf360c;
+            opacity: 0.7;
+        }
+
+        .swara-key-black {
+            position: absolute;
+            width: 42px;
+            height: 80px;
+            background: #4e342e;
+            border: 2px solid #3e2723;
+            border-radius: 0 0 6px 6px;
+            z-index: 10;
+            cursor: default;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-end;
+            align-items: center;
+            padding-bottom: 5px;
+            font-size: 0.6rem;
+            font-weight: 400;
+            color: #d7ccc8;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .swara-key-black.has-swara {
+            cursor: pointer;
+        }
+
+        .swara-key-black.has-swara:hover {
+            background: #6d4c41;
+        }
+
+        .swara-key-black.selected {
+            background: #bf360c;
+            border-color: #bf360c;
+            color: white;
+        }
+
+        .key-swara-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            min-height: 1.2em;
+        }
+
+        .swara-key-black .key-swara-label {
+            font-size: 0.72rem;
+        }
+
+        .key-note-label {
+            display: block;
+            font-size: 0.65rem;
+            opacity: 0.7;
+            margin-top: 1px;
+        }
+
+        .swara-key-black .key-note-label {
+            font-size: 0.55rem;
         }
 
         .options {
@@ -860,6 +1027,16 @@
             .play-controls { justify-content: center; }
             .midi-adj-row { gap: 1rem; }
             .midi-sound-options { gap: 0.8rem; }
+            .swara-piano-keys { height: 110px; max-width: 100%; }
+            .swara-key-white { width: calc(100% / 7); height: 110px; font-size: 0.65rem; padding-bottom: 4px; }
+            .swara-key-white .key-swara-label { font-size: 0.75rem; }
+            .swara-key-black { width: 30px; height: 64px; font-size: 0.55rem; padding-bottom: 3px; }
+            .swara-key-black .key-swara-label { font-size: 0.6rem; }
+            .swara-key-black[data-chromatic="1"] { left: calc(100% / 7 - 15px) !important; }
+            .swara-key-black[data-chromatic="3"] { left: calc(200% / 7 - 15px) !important; }
+            .swara-key-black[data-chromatic="6"] { left: calc(400% / 7 - 15px) !important; }
+            .swara-key-black[data-chromatic="8"] { left: calc(500% / 7 - 15px) !important; }
+            .swara-key-black[data-chromatic="10"] { left: calc(600% / 7 - 15px) !important; }
         }
     </style>
 </head>
@@ -880,6 +1057,46 @@
 
         <!-- ── 2. Input Card ───────────────────────────────── -->
         <div class="card">
+            <div class="options" style="margin-bottom: 0.8rem;">
+                <label>
+                    Sa =&nbsp;
+                    <select class="key-select" id="key-select">
+                        <option value="C" selected>C</option>
+                        <option value="C#">C# / Db</option>
+                        <option value="D">D</option>
+                        <option value="D#">D# / Eb</option>
+                        <option value="E">E</option>
+                        <option value="F">F</option>
+                        <option value="F#">F# / Gb</option>
+                        <option value="G">G</option>
+                        <option value="G#">G# / Ab</option>
+                        <option value="A">A</option>
+                        <option value="A#">A# / Bb</option>
+                        <option value="B">B</option>
+                    </select>
+                </label>
+            </div>
+
+            <div class="swara-piano">
+                <div class="swara-piano-label">Swara selector:</div>
+                <div class="swara-piano-keys" id="swara-piano-keys">
+                    <!-- White keys: fixed Western notes C D E F G A B -->
+                    <div class="swara-key swara-key-white" data-chromatic="0"><span class="key-swara-label"></span><span class="key-note-label">C</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="2"><span class="key-swara-label"></span><span class="key-note-label">D</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="4"><span class="key-swara-label"></span><span class="key-note-label">E</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="5"><span class="key-swara-label"></span><span class="key-note-label">F</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="7"><span class="key-swara-label"></span><span class="key-note-label">G</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="9"><span class="key-swara-label"></span><span class="key-note-label">A</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="11"><span class="key-swara-label"></span><span class="key-note-label">B</span></div>
+                    <!-- Black keys: fixed Western notes C# D# F# G# A# -->
+                    <div class="swara-key swara-key-black" data-chromatic="1" style="left:49px"><span class="key-swara-label"></span><span class="key-note-label">C#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="3" style="left:119px"><span class="key-swara-label"></span><span class="key-note-label">D#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="6" style="left:259px"><span class="key-swara-label"></span><span class="key-note-label">F#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="8" style="left:329px"><span class="key-swara-label"></span><span class="key-note-label">G#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="10" style="left:399px"><span class="key-swara-label"></span><span class="key-note-label">A#</span></div>
+                </div>
+            </div>
+
             <!-- Swara text input — accepts full names (Sa Re Ga) or short (S R G) -->
             <div class="input-group">
                 <label for="sequence-input">Enter the first line of the alankar</label>
@@ -908,23 +1125,6 @@
                 <label>
                     <input type="checkbox" id="include-descending" checked>
                     Include Avarohi (descending)
-                </label>
-                <label>
-                    Sa =&nbsp;
-                    <select class="key-select" id="key-select">
-                        <option value="C" selected>C</option>
-                        <option value="C#">C# / Db</option>
-                        <option value="D">D</option>
-                        <option value="D#">D# / Eb</option>
-                        <option value="E">E</option>
-                        <option value="F">F</option>
-                        <option value="F#">F# / Gb</option>
-                        <option value="G">G</option>
-                        <option value="G#">G# / Ab</option>
-                        <option value="A">A</option>
-                        <option value="A#">A# / Bb</option>
-                        <option value="B">B</option>
-                    </select>
                 </label>
             </div>
 
@@ -1103,22 +1303,45 @@
         //   - Octave marks: ".Sa" (lower), "Sa'" (upper)
         // ══════════════════════════════════════════════════════
 
-        // The 7 swaras of Indian classical music (shuddh/natural notes)
+        // The 7 swaras of Indian classical music (shuddh/natural notes).
+        // SWARAS_FULL/SHORT are immutable constants used for INPUT PARSING (case-insensitive).
+        // SWARAS_FULL_DISPLAY/SHORT_DISPLAY are mutable and used for OUTPUT RENDERING.
+        // Display names change when swara variants are toggled on the Swara Selector piano.
+        // Convention (Pt Ramanuj Dasgupta style):
+        //   Shuddh = uppercase (S R G P D N), Komal = lowercase (r g d n)
+        //   Exception: Shuddh Ma = lowercase 'm', Teevra Ma = uppercase 'M'
         const SWARAS_FULL  = ['Sa', 'Re', 'Ga', 'Ma', 'Pa', 'Dha', 'Ni'];
         const SWARAS_SHORT = ['S',  'R',  'G',  'M',  'P',  'D',   'N'];
+        let SWARAS_FULL_DISPLAY  = ['Sa', 'Re', 'Ga', 'ma', 'Pa', 'Dha', 'Ni'];
+        let SWARAS_SHORT_DISPLAY = ['S',  'R',  'G',  'm',  'P',  'D',   'N'];
 
         // ── Parse a single swara token to a numeric value ───
         // Lower octave: 0–6, Middle: 7–13, Upper: 14–20
+        // Returns { value, isShort, explicitOctave }.
+        // explicitOctave=true when . or ' marker is present — used by
+        // parseSequence() to decide whether to apply nearest-octave logic.
+        // Supports markers as prefix OR suffix: .N, N., 'S, S' all work.
         function parseSwara(token) {
             let octave = 1; // middle
             let name = token.trim();
+            let explicitOctave = false;
 
             if (name.startsWith('.')) {
                 octave = 0;
                 name = name.slice(1);
+                explicitOctave = true;
+            } else if (name.startsWith('\u2019') || name.startsWith("'")) {
+                octave = 2;
+                name = name.slice(1);
+                explicitOctave = true;
+            } else if (name.endsWith('.')) {
+                octave = 0;
+                name = name.slice(0, -1);
+                explicitOctave = true;
             } else if (name.endsWith('\u2019') || name.endsWith("'")) {
                 octave = 2;
                 name = name.slice(0, -1);
+                explicitOctave = true;
             }
 
             let idx = SWARAS_FULL.findIndex(s => s.toLowerCase() === name.toLowerCase());
@@ -1129,12 +1352,12 @@
             }
 
             if (idx === -1) return null;
-            return { value: octave * 7 + idx, isShort };
+            return { value: octave * 7 + idx, isShort, explicitOctave };
         }
 
         // ── Convert numeric value back to display string ────
         function numToSwara(num, useShort) {
-            const swaras = useShort ? SWARAS_SHORT : SWARAS_FULL;
+            const swaras = useShort ? SWARAS_SHORT_DISPLAY : SWARAS_FULL_DISPLAY;
             let idx = ((num % 7) + 7) % 7;
             let octave = Math.floor(num / 7);
             if (num < 0 && num % 7 !== 0) {
@@ -1160,42 +1383,92 @@
 
         // ── Try splitting a continuous string into single-letter swaras ──
         // e.g. "SRRSRGRS" → ['S','R','R','S','R','G','R','S']
+        // Also handles octave markers within continuous strings:
+        //   "S.NS.NSRGM" → ['S', '.N', 'S', '.N', 'S', 'R', 'G', 'M']
+        //   "SRGMPDNS'"  → ['S', 'R', 'G', 'M', 'P', 'D', 'N', "S'"]
+        // Rule: dot (.) before a letter = lower octave prefix for that letter.
+        //        dot (.) after a letter where next char is also a letter = suffix.
+        //        apostrophe (') is always treated as suffix for the preceding letter,
+        //        unless it precedes a letter with no preceding letter context.
         const SHORT_SET = new Set(SWARAS_SHORT.map(s => s.toUpperCase()));
 
         function trySplitContinuous(str) {
-            const upper = str.toUpperCase();
-            const results = [];
-            for (const ch of upper) {
-                if (!SHORT_SET.has(ch)) return null; // not all valid single-letter swaras
-                results.push(ch);
+            const tokens = [];
+            let i = 0;
+            while (i < str.length) {
+                const ch = str[i];
+                const isMarker = ch === '.' || ch === "'" || ch === '\u2019';
+                if (isMarker && i + 1 < str.length && SHORT_SET.has(str[i + 1].toUpperCase())) {
+                    tokens.push(ch + str[i + 1]);
+                    i += 2;
+                    continue;
+                }
+                if (!SHORT_SET.has(ch.toUpperCase())) return null;
+                const next = i + 1 < str.length ? str[i + 1] : null;
+                const nextIsMarker = next === '.' || next === "'" || next === '\u2019';
+                if (nextIsMarker) {
+                    const afterMarker = i + 2 < str.length ? str[i + 2] : null;
+                    const markerIsPrefix = afterMarker && SHORT_SET.has(afterMarker.toUpperCase());
+                    if (markerIsPrefix && next === '.') {
+                        tokens.push(ch);
+                    } else if (markerIsPrefix && (next === "'" || next === '\u2019')) {
+                        tokens.push(ch + next);
+                        i++;
+                    } else {
+                        tokens.push(ch + next);
+                        i++;
+                    }
+                } else {
+                    tokens.push(ch);
+                }
+                i++;
             }
-            return results.length >= 2 ? results : null;
+            return tokens.length >= 2 ? tokens : null;
+        }
+
+        // ── Nearest-octave resolution ────────────────────────
+        // Given a swara index (0–6) and the previous note's absolute value,
+        // returns the octave placement (lower/middle/upper) closest to prevValue.
+        // This allows "SNSN" to produce S .N S .N (N below Sa) rather than
+        // S N S N (N six steps above Sa in the same octave).
+        function nearestOctave(idx, prevValue) {
+            const candidates = [idx, idx + 7, idx + 14];
+            let best = candidates[0];
+            let bestDist = Math.abs(candidates[0] - prevValue);
+            for (let c = 1; c < candidates.length; c++) {
+                const d = Math.abs(candidates[c] - prevValue);
+                if (d < bestDist) { best = candidates[c]; bestDist = d; }
+            }
+            return best;
         }
 
         // ── Parse full input sequence ───────────────────────
+        // Two-phase parsing:
+        //   Phase 1: Tokenize and parse each swara to { value, isShort, explicitOctave }.
+        //   Phase 2: Apply nearest-octave resolution for swaras without explicit markers.
+        // The first note always keeps its parsed octave (defaults to middle if unmarked).
         function parseSequence(input) {
             const tokens = input.trim().split(/[\s,]+/).filter(t => t.length > 0);
             if (tokens.length === 0) {
                 return { error: 'Please enter at least one swara.' };
             }
 
-            const notes = [];
+            const parsedList = [];
             let shortCount = 0;
             let fullCount = 0;
 
             for (const token of tokens) {
                 const parsed = parseSwara(token);
                 if (parsed) {
-                    notes.push(parsed.value);
+                    parsedList.push(parsed);
                     if (parsed.isShort) shortCount++;
                     else fullCount++;
                 } else {
-                    // Try splitting as continuous short swaras (e.g. "SRGSRGM")
                     const split = trySplitContinuous(token);
                     if (split) {
                         for (const ch of split) {
                             const p = parseSwara(ch);
-                            notes.push(p.value);
+                            parsedList.push(p);
                             shortCount++;
                         }
                     } else {
@@ -1204,8 +1477,19 @@
                 }
             }
 
-            if (notes.length < 2) {
+            if (parsedList.length < 2) {
                 return { error: 'Please enter at least 2 swaras to form a pattern.' };
+            }
+
+            const notes = [];
+            for (let i = 0; i < parsedList.length; i++) {
+                const p = parsedList[i];
+                if (p.explicitOctave || i === 0) {
+                    notes.push(p.value);
+                } else {
+                    const idx = p.value % 7;
+                    notes.push(nearestOctave(idx, notes[i - 1]));
+                }
             }
 
             return { notes, useShort: shortCount > fullCount };
@@ -1483,8 +1767,24 @@
         //   key selector (C=261.63 Hz, etc.).
         // ══════════════════════════════════════════════════════
 
-        // Shuddh swaras map to major scale intervals (semitones from Sa)
-        const SWARA_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+        // Semitone offsets from Sa for each swara. This array is MUTABLE —
+        // it is updated by the Swara Selector piano UI when the user toggles
+        // between Shuddh and Komal/Teevra variants. Default = all Shuddh.
+        // Used by noteNumToFreq() to convert internal note numbers to Hz.
+        let SWARA_SEMITONES = [0, 2, 4, 5, 7, 9, 11];
+
+        // Swara variant definitions: maps each swara index (0–6) to its
+        // Shuddh and Komal/Teevra semitone values. null = fixed (Sa, Pa).
+        // Used by the Swara Selector click handler to update SWARA_SEMITONES.
+        const SWARA_VARIANTS = [
+            null,                                        // 0: Sa — fixed
+            { shuddh: 2, variant: 1, type: 'komal' },   // 1: Re — Komal Re = 1 semitone
+            { shuddh: 4, variant: 3, type: 'komal' },   // 2: Ga — Komal Ga = 3 semitones
+            { shuddh: 5, variant: 6, type: 'teevra' },  // 3: Ma — Teevra Ma = 6 semitones
+            null,                                        // 4: Pa — fixed
+            { shuddh: 9, variant: 8, type: 'komal' },   // 5: Dha — Komal Dha = 8 semitones
+            { shuddh: 11, variant: 10, type: 'komal' }, // 6: Ni — Komal Ni = 10 semitones
+        ];
 
         // Base frequency of Sa in each key (octave 4)
         const KEY_BASE_FREQ = {
@@ -2322,6 +2622,10 @@
             currentParsedNotes = parsed.notes;
             currentUseShort = parsed.useShort;
 
+            // Auto-correct input text to reflect selected swara variants.
+            // e.g. if Komal Ga is selected and user typed "SRG", update to "S R g".
+            document.getElementById('sequence-input').value = parsed.notes.map(n => numToSwara(n, parsed.useShort).text).join(' ');
+
             const palta = generatePalta(parsed.notes, includeDesc, ascLineCount, descLineCount);
             currentPaltaData = palta;
 
@@ -2366,6 +2670,36 @@
 
             const outputCard = document.getElementById('output-card');
             outputCard.dataset.plainText = paltaToText(palta, currentUseShort, includeDesc, beatCount);
+        }
+
+        // ── Swara variant display name updater ───────────────
+        // Updates SWARAS_FULL_DISPLAY / SWARAS_SHORT_DISPLAY when a swara
+        // variant is toggled on the piano selector.
+        // Notation convention (Pt Ramanuj Dasgupta style):
+        //   Komal swaras → lowercase (re, ga, dha, ni / r, g, d, n)
+        //   Teevra Ma → uppercase (Ma / M)
+        //   Shuddh Ma → lowercase (ma / m)   ← opposite of other swaras
+        //   All other Shuddh → uppercase (Re, Ga, Dha, Ni / R, G, D, N)
+        function updateSwaraDisplayName(swaraIdx, isVariant) {
+            if (!SWARA_VARIANTS[swaraIdx]) return;
+            const varType = SWARA_VARIANTS[swaraIdx].type;
+            if (isVariant) {
+                if (varType === 'komal') {
+                    SWARAS_FULL_DISPLAY[swaraIdx] = SWARAS_FULL[swaraIdx].toLowerCase();
+                    SWARAS_SHORT_DISPLAY[swaraIdx] = SWARAS_SHORT[swaraIdx].toLowerCase();
+                } else {
+                    SWARAS_FULL_DISPLAY[swaraIdx] = 'Ma';
+                    SWARAS_SHORT_DISPLAY[swaraIdx] = 'M';
+                }
+            } else {
+                if (varType === 'teevra') {
+                    SWARAS_FULL_DISPLAY[swaraIdx] = 'ma';
+                    SWARAS_SHORT_DISPLAY[swaraIdx] = 'm';
+                } else {
+                    SWARAS_FULL_DISPLAY[swaraIdx] = SWARAS_FULL[swaraIdx];
+                    SWARAS_SHORT_DISPLAY[swaraIdx] = SWARAS_SHORT[swaraIdx];
+                }
+            }
         }
 
         // ══════════════════════════════════════════════════════
@@ -2479,6 +2813,115 @@
                 doGenerate();
             }
         });
+
+        // ── Swara Selector — places swara labels on the correct chromatic keys ──
+        // The piano always shows fixed Western notes (C–B). Swara labels move based
+        // on the selected root key (Sa=). Each swara's chromatic position =
+        // (rootIdx + SWARA_SEMITONES[swaraIdx]) % 12. Keys with swaras get
+        // 'has-swara', 'selected', and optionally 'fixed' classes.
+        const ALL_NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
+        // Swara display labels for piano keys.
+        // Index 0–6 = Shuddh swara labels; each also has a variant label.
+        const PIANO_SWARA_LABELS = [
+            { shuddh: 'Sa', variant: null },       // 0: Sa — no variant
+            { shuddh: 'Re', variant: 're' },        // 1: Re / Komal re
+            { shuddh: 'Ga', variant: 'ga' },        // 2: Ga / Komal ga
+            { shuddh: 'ma', variant: 'Ma' },        // 3: ma (shuddh) / Ma (teevra)
+            { shuddh: 'Pa', variant: null },         // 4: Pa — no variant
+            { shuddh: 'Dha', variant: 'dha' },      // 5: Dha / Komal dha
+            { shuddh: 'Ni', variant: 'ni' },         // 6: Ni / Komal ni
+        ];
+
+        function updatePianoSwaraLabels() {
+            const rootKey = document.getElementById('key-select').value;
+            const rootIdx = ALL_NOTES.indexOf(rootKey);
+            const container = document.getElementById('swara-piano-keys');
+
+            // Clear all swara state from every key
+            container.querySelectorAll('.swara-key').forEach(el => {
+                el.querySelector('.key-swara-label').textContent = '';
+                el.classList.remove('has-swara', 'selected', 'fixed');
+                delete el.dataset.swaraIdx;
+            });
+
+            // Place each swara (shuddh + variant) on the correct chromatic key
+            for (let swaraIdx = 0; swaraIdx < 7; swaraIdx++) {
+                const chromatic = (rootIdx + SWARA_SEMITONES[swaraIdx]) % 12;
+                const el = container.querySelector(`[data-chromatic="${chromatic}"]`);
+                if (!el) continue;
+
+                const isVariant = SWARA_VARIANTS[swaraIdx] &&
+                    SWARA_SEMITONES[swaraIdx] === SWARA_VARIANTS[swaraIdx].variant;
+                const label = isVariant
+                    ? PIANO_SWARA_LABELS[swaraIdx].variant
+                    : PIANO_SWARA_LABELS[swaraIdx].shuddh;
+
+                el.querySelector('.key-swara-label').textContent = label;
+                el.dataset.swaraIdx = swaraIdx;
+                el.classList.add('has-swara', 'selected');
+
+                if (swaraIdx === 0 || swaraIdx === 4) {
+                    el.classList.add('fixed');
+                }
+
+                // Also place the paired variant/shuddh on its chromatic key
+                const varInfo = SWARA_VARIANTS[swaraIdx];
+                if (varInfo) {
+                    const altSemitone = isVariant ? varInfo.shuddh : varInfo.variant;
+                    const altChromatic = (rootIdx + altSemitone) % 12;
+                    const altEl = container.querySelector(`[data-chromatic="${altChromatic}"]`);
+                    if (altEl) {
+                        const altLabel = isVariant
+                            ? PIANO_SWARA_LABELS[swaraIdx].shuddh
+                            : PIANO_SWARA_LABELS[swaraIdx].variant;
+                        altEl.querySelector('.key-swara-label').textContent = altLabel;
+                        altEl.dataset.swaraIdx = swaraIdx;
+                        altEl.classList.add('has-swara');
+                    }
+                }
+            }
+        }
+        updatePianoSwaraLabels();
+
+        document.getElementById('key-select').addEventListener('change', () => {
+            updatePianoSwaraLabels();
+            if (currentParsedNotes) {
+                reRenderPalta();
+            }
+        });
+
+        // ── Swara Selector — piano key click handler ─────────
+        // Clicking a key with a swara label toggles between Shuddh and variant.
+        document.getElementById('swara-piano-keys').addEventListener('click', (e) => {
+            const key = e.target.closest('.swara-key');
+            if (!key || !key.classList.contains('has-swara') || key.classList.contains('fixed')) return;
+
+            const swaraIdx = parseInt(key.dataset.swaraIdx);
+            const variantInfo = SWARA_VARIANTS[swaraIdx];
+            if (!variantInfo) return;
+
+            const isCurrentlyVariant = SWARA_SEMITONES[swaraIdx] === variantInfo.variant;
+
+            if (key.classList.contains('selected')) {
+                // This key is the active one — toggle to the other
+                SWARA_SEMITONES[swaraIdx] = isCurrentlyVariant ? variantInfo.shuddh : variantInfo.variant;
+                updateSwaraDisplayName(swaraIdx, !isCurrentlyVariant);
+            } else {
+                // This key is the inactive one — make it active
+                const wasVariant = isCurrentlyVariant;
+                SWARA_SEMITONES[swaraIdx] = wasVariant ? variantInfo.shuddh : variantInfo.variant;
+                updateSwaraDisplayName(swaraIdx, !wasVariant);
+            }
+
+            updatePianoSwaraLabels();
+
+            if (currentParsedNotes) {
+                reRenderPalta();
+                document.getElementById('pattern-info').innerHTML = describePattern(currentParsedNotes, currentUseShort);
+            }
+        });
+
         // ══════════════════════════════════════════════════════
         // ── 6. MIDI KEYBOARD ─────────────────────────────────
         // Connects to external MIDI keyboards via the Web MIDI API.
