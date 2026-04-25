@@ -1,12 +1,23 @@
 # Palta Alankar Maker
 
-A web-based tool for Indian classical music practice. Enter the first line of a palta (alankar) and the app generates all ascending and descending lines automatically, with playback using synthesized Piano or Harmonium sounds. Includes a MIDI keyboard interface for playing along.
+A web-based tool for Indian classical music practice. Enter the first line of a palta (alankar) and the app generates all ascending and descending lines automatically, with playback using synthesized Piano or Harmonium sounds. Includes a tanpura drone for practice and a MIDI keyboard interface for playing along.
 
 **Live app:** https://muneerahmed94-alt.github.io/palta-alankar-maker/
 
 Developed by Muneer Ahmed Shaik.
 
 ## Features
+
+### Tanpura Drone
+- Synthesized tanpura drone using additive harmonics with jawari bridge simulation
+- **Strings**: Pa Sa Sa Sa (default), Ma Sa Sa Sa, Ni Sa Sa Sa, plus 5-string variants
+- **Pitch register**: Male (lower octave) / Female (higher octave)
+- **Volume**: adjustable slider (0–100)
+- **Tempo**: pluck cycle speed (30–120 BPM)
+- **Jawari**: controls the characteristic buzzing overtone richness (0–100). The jawari bridge causes upper harmonics to swell after the pluck rather than decaying, creating the shimmering drone effect
+- Uses the selected root key (Sa =) for pitch
+- Runs independently of palta playback — practice with drone accompaniment
+- Auto-restarts when tuning or pitch register changes
 
 ### Swara Selector (Chromatic Piano Keyboard UI)
 - Full chromatic 12-key piano layout (7 white + 5 black) at the top of the input card
@@ -101,18 +112,19 @@ palta-alankar-maker/
 The app is a single `index.html` file with no external dependencies (except Google Fonts). Everything runs client-side in the browser.
 
 ### CSS (inline `<style>`)
-Organized into 8 sections:
+Organized into 9 sections:
 1. **Base / Layout** — body, container, header, cards
 2. **Input Card** — form elements, preset chip buttons
-3. **Swara Selector** — chromatic piano keyboard with white/black keys, swara labels, note labels, selection states, fixed key styling
-4. **Output Card** — palta line display, direction headers, add/delete buttons
-5. **Playback Controls** — key/sound/beat selectors, tempo slider, play/stop buttons
-6. **MIDI Card** — connection UI, sound options, octave/transpose adjustment buttons
-7. **Footer** — developer credit
-8. **Responsive** — mobile breakpoint at 600px (piano keys scale to percentage widths)
+3. **Tanpura Controls** — drone section with start/stop, tuning selects, volume/tempo/jawari sliders
+4. **Swara Selector** — chromatic piano keyboard with white/black keys, swara labels, note labels, selection states, fixed key styling
+5. **Output Card** — palta line display, direction headers, add/delete buttons
+6. **Playback Controls** — key/sound/beat selectors, tempo slider, play/stop buttons
+7. **MIDI Card** — connection UI, sound options, octave/transpose adjustment buttons
+8. **Footer** — developer credit
+9. **Responsive** — mobile breakpoint at 600px (piano keys, tanpura controls scale for mobile)
 
 ### JavaScript (inline `<script>`)
-Six subsystems + event listeners:
+Seven subsystems + event listeners:
 
 #### 1. Swara Parser
 Converts user input text into numeric note values (0–20 across three octaves). Handles full names, short names, continuous strings, and octave markers.
@@ -164,12 +176,28 @@ Schedules notes on the Web Audio API timeline for sample-accurate timing. Uses `
 - `updatePresetLabels()` — Re-renders all preset button labels (common, special, my patterns) and the pattern-info text using the current display name arrays. Called when swara variants change.
 - `setTempo(bpm)` — Sets both the slider and input to the given BPM value.
 
-#### 6. MIDI Keyboard
+#### 6. Tanpura Engine
+Synthesizes a tanpura drone using the Web Audio API with additive sine harmonics and jawari bridge simulation.
+
+**Synthesis approach:**
+- 16 sine oscillators per string pluck at harmonic frequencies (with slight inharmonicity and detuning for natural character)
+- **Jawari bridge simulation**: A sweeping peaking filter moves upward in frequency over 2.5 seconds, simulating the string's contact point creeping up the curved bridge surface
+- **Delayed harmonic swell**: The fundamental peaks early and decays; harmonics 3-5 swell 0.3-1.5s after pluck; harmonics 6+ swell 1-3s after pluck. This delayed bloom is what distinguishes tanpura from piano/guitar
+- **Sympathetic resonance** at octave and fifth with slow LFO tremolo for the "singing" quality
+- 7-second sustain per pluck with natural decay curves
+
+**Key functions:**
+- `pluckTanpuraString()` — Creates one string pluck with all harmonics and jawari simulation
+- `getTanpuraStringFreqs()` — Computes string frequencies from tuning, key, and pitch register
+- `startTanpura()` / `stopTanpura()` — Manages the pluck cycle timer and AudioContext
+
+#### 7. MIDI Keyboard
 Uses `navigator.requestMIDIAccess()` to connect to external keyboards. Each note-on creates synth oscillators wrapped in a per-note `masterGain` node. On note-off, the masterGain is faded to zero (simulating a damper). The Map `midiActiveNotes` tracks all sounding notes for cleanup.
 
 #### Event Listeners
 - **Preset buttons** (common patterns) — Set input text and call `doGenerate()`.
 - **Special preset buttons** — Call `doGenerateSpecial()` with the pattern type.
+- **Tanpura** — Start/stop toggle, auto-restarts on tuning/pitch change. Volume/tempo/jawari sliders update live.
 - **Swara Selector piano** — `updatePianoSwaraLabels()` places swara labels on correct chromatic keys based on Sa=. Click handler toggles variants and re-renders.
 - **Key selector** (Sa=) — Updates piano swara labels and re-renders if a palta is displayed.
 - **Include Avarohi** — Live toggle that re-generates the palta to show/hide descending section.

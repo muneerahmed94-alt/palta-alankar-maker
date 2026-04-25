@@ -10,6 +10,7 @@
   - Takes the first line of a palta/alankar (e.g. "Sa Re Ga Ma") and generates
     all 7 ascending (aarohi) and 7 descending (avarohi) lines automatically.
   - Plays back the generated palta using synthesized Piano or Harmonium sounds.
+  - Provides a tanpura drone for practice with jawari simulation.
   - Provides preset patterns (common, special, and custom "My patterns").
   - Provides a MIDI keyboard interface to play along with the generated palta.
 
@@ -27,13 +28,14 @@
 
   UI LAYOUT (Input Card, top to bottom):
     1. Sa = key selector     — sets the root note (C through B)
-    2. Swara Selector        — chromatic piano keyboard with fixed Western note labels
+    2. Tanpura               — drone with strings, pitch, volume, tempo, jawari controls
+    3. Swara Selector        — chromatic piano keyboard with fixed Western note labels
                                 (C–B) and movable swara labels that shift with Sa =
-    3. Common patterns       — 12 palta presets (repetitions, ascending, direction changes)
-    4. Special patterns      — scale, SR/SG pairs, RS/GS pairs, expanding
-    5. My patterns           — user's custom saved patterns
-    6. Custom text input     — "Generate your own palta/alankar which starts with"
-    7. Generate button
+    4. Common patterns       — 12 palta presets (repetitions, ascending, direction changes)
+    5. Special patterns      — scale, SR/SG pairs, RS/GS pairs, expanding
+    6. My patterns           — user's custom saved patterns
+    7. Custom text input     — "Generate your own palta/alankar which starts with"
+    8. Generate button
 
   UI LAYOUT (Output Card):
     1. Generated Palta title + Copy as Text
@@ -138,14 +140,15 @@
          CSS: All styles are inline. Organized into these sections:
          1. Base / Layout       — body, container, header, cards
          2. Input Card          — form elements, presets, options
-         3. Swara Selector      — chromatic piano keyboard (white/black keys,
+         3. Tanpura Controls    — drone section with start/stop, tuning, sliders
+         4. Swara Selector      — chromatic piano keyboard (white/black keys,
                                   swara labels, note labels, selection states)
-         4. Output Card         — palta display, sound options, playback bar,
+         5. Output Card         — palta display, sound options, playback bar,
                                   include avarohi, legend
-         5. Playback Controls   — play/stop buttons, tempo, beat selector
-         6. MIDI Card           — MIDI connection, sound options, adj buttons
-         7. Footer              — developer credit
-         8. Responsive          — mobile breakpoint at 600px
+         6. Playback Controls   — play/stop buttons, tempo, beat selector
+         7. MIDI Card           — MIDI connection, sound options, adj buttons
+         8. Footer              — developer credit
+         9. Responsive          — mobile breakpoint at 600px
          ================================================================ -->
     <style>
         /* ── 1. Base / Layout ──────────────────────────────── */
@@ -258,6 +261,99 @@
             background: #bf360c;
             color: white;
             border-color: #bf360c;
+        }
+
+        /* ── Tanpura Controls ──────────────────────────────── */
+        .tanpura-section {
+            margin-bottom: 1.4rem;
+            padding: 1rem 1.2rem;
+            background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
+            border: 1px solid #ffe0b2;
+            border-radius: 12px;
+        }
+
+        .tanpura-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.8rem;
+        }
+
+        .tanpura-label {
+            font-size: 0.95rem;
+            font-weight: 600;
+            color: #bf360c;
+        }
+
+        .tanpura-toggle {
+            padding: 0.4rem 1.2rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            border: 2px solid #bf360c;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            transition: all 0.2s;
+            background: white;
+            color: #bf360c;
+        }
+
+        .tanpura-toggle:hover {
+            background: #bf360c;
+            color: white;
+        }
+
+        .tanpura-toggle.playing {
+            background: #c62828;
+            border-color: #c62828;
+            color: white;
+        }
+
+        .tanpura-toggle.playing:hover {
+            background: #b71c1c;
+        }
+
+        .tanpura-controls {
+            display: flex;
+            gap: 1.2rem;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 0.6rem;
+        }
+
+        .tanpura-controls:last-child {
+            margin-bottom: 0;
+        }
+
+        .tanpura-controls label {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+            font-size: 0.82rem;
+            color: #4e342e;
+            white-space: nowrap;
+        }
+
+        .tanpura-select {
+            padding: 0.3rem 0.5rem;
+            font-size: 0.82rem;
+            border: 1px solid #d7ccc8;
+            border-radius: 6px;
+            font-family: inherit;
+            background: white;
+            color: #3e2723;
+            cursor: pointer;
+        }
+
+        .tanpura-slider-label {
+            flex: 1;
+            min-width: 100px;
+        }
+
+        .tanpura-slider {
+            width: 80px;
+            accent-color: #bf360c;
+            cursor: pointer;
         }
 
         /* ── Swara Selector (Piano Layout) ────────────────── */
@@ -1184,6 +1280,14 @@
             .midi-adj-btn { width: 36px; height: 36px; }
             .midi-connect-btn { font-size: 0.8rem; padding: 0.4rem 0.8rem; }
 
+            /* Tanpura */
+            .tanpura-section { padding: 0.8rem; }
+            .tanpura-label { font-size: 0.85rem; }
+            .tanpura-toggle { font-size: 0.78rem; padding: 0.35rem 0.9rem; }
+            .tanpura-controls { gap: 0.6rem; }
+            .tanpura-controls label { font-size: 0.75rem; }
+            .tanpura-slider { width: 60px; }
+
             /* Footer */
             .site-footer { font-size: 0.7rem; padding: 1rem 0 0.4rem; }
         }
@@ -1228,6 +1332,47 @@
                         <option value="B">B</option>
                     </select>
                 </label>
+            </div>
+
+            <!-- Tanpura drone controls -->
+            <div class="tanpura-section" id="tanpura-section">
+                <div class="tanpura-header">
+                    <span class="tanpura-label">Tanpura</span>
+                    <button class="tanpura-toggle" id="tanpura-toggle">Start</button>
+                </div>
+                <div class="tanpura-controls">
+                    <label>
+                        Strings&nbsp;
+                        <select class="tanpura-select" id="tanpura-tuning">
+                            <option value="pa" selected>Pa Sa Sa Sa</option>
+                            <option value="ma">Ma Sa Sa Sa</option>
+                            <option value="ni">Ni Sa Sa Sa</option>
+                            <option value="pa5">Pa Sa Sa Sa Sa (5)</option>
+                            <option value="ma5">Ma Sa Sa Sa Sa (5)</option>
+                        </select>
+                    </label>
+                    <label>
+                        Pitch&nbsp;
+                        <select class="tanpura-select" id="tanpura-pitch">
+                            <option value="male">Male (low)</option>
+                            <option value="female" selected>Female (high)</option>
+                        </select>
+                    </label>
+                </div>
+                <div class="tanpura-controls">
+                    <label class="tanpura-slider-label">
+                        Volume&nbsp;
+                        <input type="range" class="tanpura-slider" id="tanpura-volume" min="0" max="100" value="50">
+                    </label>
+                    <label class="tanpura-slider-label">
+                        Tempo&nbsp;
+                        <input type="range" class="tanpura-slider" id="tanpura-tempo" min="30" max="120" value="60">
+                    </label>
+                    <label class="tanpura-slider-label">
+                        Jawari&nbsp;
+                        <input type="range" class="tanpura-slider" id="tanpura-jawari" min="0" max="100" value="40">
+                    </label>
+                </div>
             </div>
 
             <div class="swara-piano">
@@ -1457,16 +1602,17 @@
 
     <script>
         // ================================================================
-        // JAVASCRIPT — Six subsystems + event listeners:
+        // JAVASCRIPT — Seven subsystems + event listeners:
         //   1. SWARA PARSER        — input parsing, nearest-octave, octave markers
         //   2. PALTA GENERATOR     — standard + special pattern generation
         //   3. RENDERER            — DOM construction for palta lines
         //   4. AUDIO ENGINE        — Web Audio synthesis, dynamic SWARA_SEMITONES
         //   5. PLAYBACK ENGINE     — scheduled playback, doGenerate, doGenerateSpecial,
         //                            reRenderPalta, updateSwaraDisplayName
-        //   6. MIDI KEYBOARD       — Web MIDI API for external keyboards
+        //   6. TANPURA ENGINE      — additive synthesis drone with jawari bridge simulation
+        //   7. MIDI KEYBOARD       — Web MIDI API for external keyboards
         //   EVENT LISTENERS        — UI wiring: presets, special presets, piano selector,
-        //                            include avarohi toggle, key-select, sound options
+        //                            tanpura, include avarohi toggle, key-select, sound
         // ================================================================
 
 
@@ -3035,6 +3181,189 @@
             }
         }
 
+        // ══════════════════════════════════════════════════════
+        // ── TANPURA DRONE ENGINE ─────────────────────────────
+        // Synthesizes a tanpura drone using Web Audio API.
+        // Each string pluck: a sawtooth oscillator run through a bandpass filter
+        // (simulating the bridge/jawari buzz) and a gentle amplitude envelope.
+        // Strings are plucked in sequence on a repeating timer.
+        // ══════════════════════════════════════════════════════
+
+        let tanpuraState = null; // { audioCtx, gainNode, strings[], timer, isPlaying }
+
+        function getTanpuraStringFreqs() {
+            const key = document.getElementById('key-select').value;
+            const baseFreq = KEY_BASE_FREQ[key];
+            const pitch = document.getElementById('tanpura-pitch').value;
+            const octaveMultiplier = pitch === 'male' ? 0.5 : 1;
+            const saFreq = baseFreq * octaveMultiplier;
+
+            const tuning = document.getElementById('tanpura-tuning').value;
+            // Pa = 7 semitones above Sa, Ma = 5 semitones, Ni = 11 semitones
+            const intervals = {
+                'pa':  [7, 0, 0, 0],        // Pa Sa Sa Sa (lower Pa)
+                'ma':  [5, 0, 0, 0],         // Ma Sa Sa Sa (lower Ma)
+                'ni':  [11, 0, 0, 0],        // Ni Sa Sa Sa (lower Ni, one octave down)
+                'pa5': [7, 0, 0, 0, 0],      // Pa Sa Sa Sa Sa
+                'ma5': [5, 0, 0, 0, 0],      // Ma Sa Sa Sa Sa
+            };
+            const semitones = intervals[tuning] || intervals['pa'];
+
+            return semitones.map((semi, i) => {
+                if (i === 0) {
+                    // First string is the non-Sa string, one octave below Sa
+                    return saFreq * 0.5 * Math.pow(2, semi / 12);
+                }
+                return saFreq;
+            });
+        }
+
+        function pluckTanpuraString(audioCtx, dest, freq, jawari, volume) {
+            const now = audioCtx.currentTime;
+            const dur = 7.0;
+
+            // Tanpura synthesis using additive harmonics with jawari bridge simulation.
+            // The jawari bridge causes a "grazing contact" where the string touches
+            // a curved surface, transferring energy from fundamental to upper harmonics
+            // AFTER the pluck. This creates the characteristic shimmering drone where
+            // overtones SWELL over time rather than decaying immediately.
+
+            const masterEnv = audioCtx.createGain();
+            masterEnv.gain.value = volume * 0.1;
+            masterEnv.connect(dest);
+
+            // Sweeping bandpass filter simulates the bridge contact point creeping
+            // up the jawari surface over time, exciting progressively higher harmonics
+            const sweepFilter = audioCtx.createBiquadFilter();
+            sweepFilter.type = 'peaking';
+            sweepFilter.Q.value = 0.8 + jawari * 2;
+            sweepFilter.gain.value = 6 + jawari * 12;
+            sweepFilter.frequency.setValueAtTime(freq * 1.5, now);
+            sweepFilter.frequency.exponentialRampToValueAtTime(freq * (3 + jawari * 10), now + 2.5);
+            sweepFilter.frequency.exponentialRampToValueAtTime(freq * 2, now + dur);
+            sweepFilter.connect(masterEnv);
+
+            // Harmonic peak amplitudes — octaves and fifths emphasized like real tanpura
+            const harmonicAmps = [1.0, 0.8, 0.5, 0.4, 0.35, 0.2, 0.25, 0.15, 0.1, 0.12, 0.08, 0.06, 0.09, 0.05, 0.04, 0.03];
+            const numHarmonics = 16;
+
+            for (let n = 1; n <= numHarmonics; n++) {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                // Slight inharmonicity — real strings have stretched partials
+                const inharmonicity = 1 + 0.00012 * n * n;
+                osc.frequency.value = freq * n * inharmonicity;
+                // Subtle detuning for shimmer/beating
+                if (n > 1) osc.frequency.value *= (1 + (Math.random() - 0.5) * 0.002);
+
+                const env = audioCtx.createGain();
+                const amp = (harmonicAmps[n - 1] || (0.5 / n)) * (1 + jawari * (n > 2 ? 1.5 : 0));
+
+                // JAWARI EFFECT: fundamental peaks early then decays;
+                // upper harmonics have DELAYED attack — they swell after the pluck
+                if (n <= 2) {
+                    // Fundamental and octave: quick attack, gradual decay
+                    env.gain.setValueAtTime(0, now);
+                    env.gain.linearRampToValueAtTime(amp, now + 0.05);
+                    env.gain.setTargetAtTime(amp * 0.6, now + 0.3, 1.0);
+                    env.gain.setTargetAtTime(0.0001, now + dur * 0.8, 1.2);
+                } else if (n <= 5) {
+                    // Mid harmonics (3rd-5th): delayed swell peaking at 0.5-1.5s
+                    const delay = 0.1 + (n - 2) * 0.15 * (1 + jawari);
+                    const peakT = 0.3 + (n - 2) * 0.3;
+                    env.gain.setValueAtTime(0, now);
+                    env.gain.setValueAtTime(0, now + delay * 0.5);
+                    env.gain.linearRampToValueAtTime(amp * jawari * 1.2, now + peakT);
+                    env.gain.setTargetAtTime(amp * jawari * 0.4, now + peakT + 0.5, 0.8 + Math.random() * 0.4);
+                    env.gain.setTargetAtTime(0.0001, now + dur * 0.7, 1.0);
+                } else {
+                    // High harmonics (6th+): longer delayed swell, shimmer
+                    const delay = 0.3 + (n - 5) * 0.2;
+                    const peakT = 1.0 + (n - 5) * 0.3;
+                    env.gain.setValueAtTime(0, now);
+                    env.gain.setValueAtTime(0, now + delay);
+                    env.gain.linearRampToValueAtTime(amp * jawari * 0.8, now + Math.min(peakT, dur * 0.5));
+                    env.gain.setTargetAtTime(0.0001, now + dur * 0.5, 0.6 + Math.random() * 0.3);
+                }
+
+                osc.connect(env);
+                env.connect(sweepFilter);
+                osc.start(now);
+                osc.stop(now + dur + 1);
+            }
+
+            // Sympathetic resonance with slow amplitude modulation for the "singing" quality
+            const sympFreqs = [freq * 2, freq * 3];
+            sympFreqs.forEach(sf => {
+                const osc = audioCtx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = sf;
+                const env = audioCtx.createGain();
+                env.gain.setValueAtTime(0, now);
+                env.gain.linearRampToValueAtTime(0.02 * jawari, now + 1.5);
+                env.gain.setTargetAtTime(0.0001, now + dur * 0.6, 1.5);
+                // Slow tremolo
+                const lfo = audioCtx.createOscillator();
+                lfo.frequency.value = 0.5 + Math.random() * 0.8;
+                const lfoG = audioCtx.createGain();
+                lfoG.gain.value = 0.01 * jawari;
+                lfo.connect(lfoG);
+                lfoG.connect(env.gain);
+                osc.connect(env);
+                env.connect(masterEnv);
+                osc.start(now);
+                osc.stop(now + dur + 1);
+                lfo.start(now);
+                lfo.stop(now + dur + 1);
+            });
+        }
+
+        function startTanpura() {
+            if (tanpuraState && tanpuraState.isPlaying) return;
+
+            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const masterGain = audioCtx.createGain();
+            const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+            masterGain.gain.value = vol;
+            masterGain.connect(audioCtx.destination);
+
+            tanpuraState = { audioCtx, masterGain, timer: null, isPlaying: true, stringIdx: 0 };
+
+            function pluckNext() {
+                if (!tanpuraState || !tanpuraState.isPlaying) return;
+                const freqs = getTanpuraStringFreqs();
+                const jawari = parseInt(document.getElementById('tanpura-jawari').value) / 100;
+                const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+                tanpuraState.masterGain.gain.value = vol;
+
+                const idx = tanpuraState.stringIdx % freqs.length;
+                pluckTanpuraString(tanpuraState.audioCtx, tanpuraState.masterGain, freqs[idx], jawari, 1.0);
+                tanpuraState.stringIdx++;
+
+                const tempo = parseInt(document.getElementById('tanpura-tempo').value);
+                const interval = 60000 / tempo;
+                tanpuraState.timer = setTimeout(pluckNext, interval);
+            }
+
+            pluckNext();
+
+            document.getElementById('tanpura-toggle').textContent = 'Stop';
+            document.getElementById('tanpura-toggle').classList.add('playing');
+        }
+
+        function stopTanpura() {
+            if (!tanpuraState) return;
+            tanpuraState.isPlaying = false;
+            if (tanpuraState.timer) clearTimeout(tanpuraState.timer);
+            if (tanpuraState.audioCtx) {
+                tanpuraState.audioCtx.close().catch(() => {});
+            }
+            tanpuraState = null;
+
+            document.getElementById('tanpura-toggle').textContent = 'Start';
+            document.getElementById('tanpura-toggle').classList.remove('playing');
+        }
+
         // ── Update all preset button labels to reflect current swara variants ──
         // Called when a swara variant is toggled on the piano selector.
         // Common/My buttons: re-parses data-pattern and renders with current display names.
@@ -3083,6 +3412,25 @@
         // Wires up all UI controls. Dynamic elements (section play buttons,
         // add/delete buttons) use event delegation on #output-lines.
         // ══════════════════════════════════════════════════════
+        // Tanpura toggle
+        document.getElementById('tanpura-toggle').addEventListener('click', () => {
+            if (tanpuraState && tanpuraState.isPlaying) {
+                stopTanpura();
+            } else {
+                startTanpura();
+            }
+        });
+
+        // Restart tanpura when tuning/pitch changes (if currently playing)
+        ['tanpura-tuning', 'tanpura-pitch'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (tanpuraState && tanpuraState.isPlaying) {
+                    stopTanpura();
+                    startTanpura();
+                }
+            });
+        });
+
         document.getElementById('generate-btn').addEventListener('click', doGenerate);
 
         document.getElementById('sequence-input').addEventListener('keydown', (e) => {
