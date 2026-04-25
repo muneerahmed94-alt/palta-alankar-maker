@@ -1,13 +1,16 @@
 <!--
   ============================================================================
   Palta Alankar Maker
+  Developed by Muneer Ahmed Shaik
   ============================================================================
   A single-page web app for Indian classical music practice.
+  Hosted at: https://muneerahmed94-alt.github.io/palta-alankar-maker/
 
   WHAT IT DOES:
   - Takes the first line of a palta/alankar (e.g. "Sa Re Ga Ma") and generates
     all 7 ascending (aarohi) and 7 descending (avarohi) lines automatically.
   - Plays back the generated palta using synthesized Piano or Harmonium sounds.
+  - Provides preset patterns (common, special, and custom "My patterns").
   - Provides a MIDI keyboard interface to play along with the generated palta.
 
   ARCHITECTURE (single-file, no build step):
@@ -16,10 +19,31 @@
   - JS:  Six subsystems, in order:
         1. Swara Parser      — converts text input ("Sa Re Ga") to numeric note values
         2. Palta Generator    — generates ascending/descending lines from a pattern
+                                (includes special pattern generator for SR/SG/... type)
         3. Renderer           — builds the DOM for the generated palta display
         4. Audio Engine       — Web Audio API synthesizers (3 piano types + harmonium)
         5. Playback Engine    — schedules timed playback of palta lines
         6. MIDI Keyboard      — Web MIDI API for external keyboard input
+
+  UI LAYOUT (Input Card, top to bottom):
+    1. Sa = key selector     — sets the root note (C through B)
+    2. Swara Selector        — chromatic piano keyboard with fixed Western note labels
+                                (C–B) and movable swara labels that shift with Sa =
+    3. Common patterns       — 8 standard palta presets (Sa Re Ga Ma, etc.)
+    4. Special patterns      — SR/SG/Sm/.../SS' and RS/GS/mS/.../S'S
+    5. My patterns           — user's custom saved patterns
+    6. Custom text input     — "Generate your own palta/alankar which starts with"
+    7. Generate button
+
+  UI LAYOUT (Output Card):
+    1. Generated Palta title + Copy as Text
+    2. Sound / Type / Reed / Left Coupler options
+    3. Playback bar (Beats, Tempo, Play Both, Repeat)
+    4. Include Avarohi checkbox (live toggle — shows/hides descending section)
+    5. Pattern info
+    6. Aarohi (ascending) lines with Play/Repeat/Skip controls
+    7. Avarohi (descending) lines (if enabled)
+    8. Legend (octave color coding)
 
   SWARA NUMBERING:
   Each swara is mapped to an integer:
@@ -35,10 +59,14 @@
     - Dha: Shuddh (9 semitones) or Komal (8 semitones)
     - Ni: Shuddh (11 semitones) or Komal (10 semitones)
 
-  A piano-keyboard-style UI ("Swara Selector") lets users toggle between
-  Shuddh and Komal/Teevra for each swara. This dynamically updates
-  SWARA_SEMITONES[], which controls frequency mapping for both palta
-  playback and MIDI keyboard. See SWARA_VARIANTS[] in JS.
+  The Swara Selector piano UI is a full chromatic 12-key layout (7 white + 5
+  black) with FIXED Western note labels (always C, C#, D, ..., B). Swara labels
+  (Sa, Re, Ga, ...) are placed dynamically on the correct keys based on the
+  selected root key (Sa =). When Sa = C, "Sa" is on the C key; when Sa = D,
+  "Sa" moves to the D key, etc. Clicking a key toggles between Shuddh and
+  Komal/Teevra for that swara. This updates SWARA_SEMITONES[], which controls
+  frequency mapping for palta playback and MIDI keyboard.
+  See updatePianoSwaraLabels() and SWARA_VARIANTS[] in JS.
 
   DISPLAY NOTATION CONVENTION (Pt Ramanuj Dasgupta style):
     - Shuddh swaras: uppercase — S R G P D N
@@ -48,6 +76,7 @@
     - Example: SRGmPDNS = all Shuddh; SRGMPDNS = with Teevra Ma
   This convention is implemented via SWARAS_SHORT_DISPLAY / SWARAS_FULL_DISPLAY
   arrays, updated by updateSwaraDisplayName() when the Swara Selector changes.
+  On Generate, the input text field auto-corrects to match the selected variants.
 
   NEAREST-OCTAVE PARSING:
   When the user omits explicit octave markers (. or '), each swara after the
@@ -63,6 +92,14 @@
   In continuous strings (e.g. "S.NS.NSRGM"), the dot is treated as a prefix
   for the next note. See trySplitContinuous() for the tokenizer logic.
 
+  SPECIAL PATTERNS:
+  Two special pattern types that don't use standard transposition:
+    - "sa-x": Sa paired with each ascending swara (SR, SG, Sm, SP, SD, SN, SS')
+    - "x-sa": Each swara paired back to Sa (RS, GS, mS, PS, DS, NS, S'S)
+  Aarohi walks up the scale, Avarohi mirrors back down from upper Sa.
+  Default tempo for special patterns is 60 BPM (vs 102 BPM for regular paltas).
+  See generateSpecialPalta() and doGenerateSpecial() in JS.
+
   SOUND SYNTHESIS:
   - Piano: Additive synthesis with inharmonicity modeling, hammer noise, body
     resonance. Three variants: Grand (rich sustain), Upright (boxy, shorter
@@ -70,6 +107,7 @@
   - Harmonium: Sawtooth oscillators (natural reed spectrum) through lowpass and
     peaking EQ filters. Six reed configurations from 2-reed to 4-reed combos.
   - Coupler: Left coupler adds lower octave, Right coupler adds upper octave.
+  Sound options are in the Output Card (after "Generated Palta" header).
 
   MIDI:
   - Uses the Web MIDI API (navigator.requestMIDIAccess).
@@ -87,12 +125,16 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <!-- ================================================================
          CSS: All styles are inline. Organized into these sections:
-         1. Base / Layout       — body, container, header
+         1. Base / Layout       — body, container, header, cards
          2. Input Card          — form elements, presets, options
-         3. Output Card         — palta display, playback bar, legend
-         4. Playback Controls   — play/stop buttons, tempo, beat selector
-         5. MIDI Card           — MIDI connection, sound options, adj buttons
-         6. Responsive          — mobile breakpoint at 600px
+         3. Swara Selector      — chromatic piano keyboard (white/black keys,
+                                  swara labels, note labels, selection states)
+         4. Output Card         — palta display, sound options, playback bar,
+                                  include avarohi, legend
+         5. Playback Controls   — play/stop buttons, tempo, beat selector
+         6. MIDI Card           — MIDI connection, sound options, adj buttons
+         7. Footer              — developer credit
+         8. Responsive          — mobile breakpoint at 600px
          ================================================================ -->
     <style>
         /* ── 1. Base / Layout ──────────────────────────────── */
@@ -1016,36 +1058,136 @@
             text-align: center;
         }
 
+        /* ── Footer ────────────────────────────────────────── */
+        .site-footer {
+            text-align: center;
+            padding: 1.5rem 0 0.5rem;
+            font-size: 0.8rem;
+            color: #8d6e63;
+            font-weight: 300;
+        }
+
         /* ── 6. Responsive (mobile ≤ 600px) ───────────────── */
+        /* ── 8. Responsive (mobile ≤ 600px, optimized for iPhone 14 at 390px) ── */
         @media (max-width: 600px) {
-            .container { padding: 1rem; }
-            header h1 { font-size: 1.6rem; }
-            .card { padding: 1.3rem; }
-            .swar { min-width: 1.8rem; font-size: 0.9rem; padding: 0.15rem 0.25rem; }
-            .options { gap: 0.8rem; }
-            .playback-bar { flex-direction: column; align-items: stretch; }
+            /* Base */
+            .container { padding: 0.75rem; }
+            header h1 { font-size: 1.5rem; }
+            header .subtitle { font-size: 0.85rem; }
+            .card { padding: 1rem; }
+
+            /* Swara Piano — percentage-based for any width */
+            .swara-piano-keys { height: 100px; max-width: 100%; }
+            .swara-key-white {
+                width: calc(100% / 7);
+                height: 100px;
+                font-size: 0.6rem;
+                padding-bottom: 3px;
+            }
+            .swara-key-white .key-swara-label { font-size: 0.7rem; }
+            .swara-key-white .key-note-label { font-size: 0.55rem; }
+            .swara-key-black {
+                width: 28px;
+                height: 58px;
+                font-size: 0.5rem;
+                padding-bottom: 2px;
+            }
+            .swara-key-black .key-swara-label { font-size: 0.58rem; }
+            .swara-key-black .key-note-label { font-size: 0.45rem; }
+            .swara-key-black[data-chromatic="1"] { left: calc(100% / 7 - 14px) !important; }
+            .swara-key-black[data-chromatic="3"] { left: calc(200% / 7 - 14px) !important; }
+            .swara-key-black[data-chromatic="6"] { left: calc(400% / 7 - 14px) !important; }
+            .swara-key-black[data-chromatic="8"] { left: calc(500% / 7 - 14px) !important; }
+            .swara-key-black[data-chromatic="10"] { left: calc(600% / 7 - 14px) !important; }
+
+            /* Presets — smaller chips */
+            .presets { margin-bottom: 1rem; }
+            .presets-label { font-size: 0.8rem; }
+            .preset-chips { gap: 0.3rem; }
+            .preset-btn { padding: 0.3rem 0.6rem; font-size: 0.75rem; }
+
+            /* Options / checkboxes */
+            .options { gap: 0.6rem; margin-bottom: 1rem; }
+            .options label { font-size: 0.85rem; }
+
+            /* Input group */
+            .input-group label { font-size: 0.9rem; }
+            .input-group input[type="text"] { font-size: 1rem; padding: 0.7rem 0.8rem; }
+            .help-text { font-size: 0.7rem; }
+
+            /* Generate button */
+            .generate-btn { font-size: 1rem; padding: 0.75rem; }
+
+            /* Sound options (in output card) */
+            .sound-options { gap: 0.6rem; margin-bottom: 1rem; }
+            .sound-options label { font-size: 0.8rem; gap: 0.3rem; }
+            .sound-select, .reed-select, .key-select { font-size: 0.82rem; padding: 0.35rem 0.5rem; }
+
+            /* Output header */
+            .output-header { margin-bottom: 0.8rem; }
+            .output-title { font-size: 0.95rem; }
+            .copy-btn { padding: 0.3rem 0.7rem; font-size: 0.75rem; }
+
+            /* Playback bar — stack vertically */
+            .playback-bar {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.6rem;
+                padding: 0.6rem 0.8rem;
+            }
+            .playback-left { gap: 0.8rem; justify-content: center; }
             .play-controls { justify-content: center; }
-            .midi-adj-row { gap: 1rem; }
-            .midi-sound-options { gap: 0.8rem; }
-            .swara-piano-keys { height: 110px; max-width: 100%; }
-            .swara-key-white { width: calc(100% / 7); height: 110px; font-size: 0.65rem; padding-bottom: 4px; }
-            .swara-key-white .key-swara-label { font-size: 0.75rem; }
-            .swara-key-black { width: 30px; height: 64px; font-size: 0.55rem; padding-bottom: 3px; }
-            .swara-key-black .key-swara-label { font-size: 0.6rem; }
-            .swara-key-black[data-chromatic="1"] { left: calc(100% / 7 - 15px) !important; }
-            .swara-key-black[data-chromatic="3"] { left: calc(200% / 7 - 15px) !important; }
-            .swara-key-black[data-chromatic="6"] { left: calc(400% / 7 - 15px) !important; }
-            .swara-key-black[data-chromatic="8"] { left: calc(500% / 7 - 15px) !important; }
-            .swara-key-black[data-chromatic="10"] { left: calc(600% / 7 - 15px) !important; }
+            .tempo-slider { width: 80px; }
+            .tempo-input { width: 2.8rem; font-size: 0.8rem; }
+            .tempo-unit { font-size: 0.7rem; }
+            .tempo-group label { font-size: 0.8rem; }
+            .beat-select { font-size: 0.82rem; padding: 0.3rem 0.5rem; }
+            .play-btn { font-size: 0.8rem; padding: 0.4rem 0.9rem; }
+            .repeat-label { font-size: 0.8rem; }
+
+            /* Pattern info */
+            .pattern-info { font-size: 0.78rem; padding: 0.5rem 0.7rem; margin-bottom: 0.8rem; }
+
+            /* Direction headers */
+            .direction-header { margin: 0.8rem 0 0.4rem; }
+            .direction-label { font-size: 0.78rem; letter-spacing: 0.5px; }
+            .section-play-btn { font-size: 0.7rem; padding: 0.2rem 0.5rem; }
+
+            /* Palta lines — compact for narrow screens */
+            .swar { min-width: 1.6rem; font-size: 0.85rem; padding: 0.12rem 0.2rem; }
+            .swar-group { gap: 0.15rem; }
+            .line-num { font-size: 0.75rem; min-width: 1.5rem; }
+            .palta-line { padding: 0.25rem 0; gap: 0.3rem; }
+            .line-actions { gap: 0.3rem; }
+            .line-action-btn { font-size: 0.65rem; padding: 0.15rem 0.4rem; }
+
+            /* Legend */
+            .legend { gap: 0.6rem; margin-top: 0.8rem; }
+            .legend-item { font-size: 0.7rem; }
+
+            /* MIDI card */
+            .midi-sound-options { gap: 0.6rem; }
+            .midi-sound-options label { font-size: 0.8rem; }
+            .midi-adj-row { gap: 0.8rem; }
+            .midi-adj-label { font-size: 0.8rem; min-width: 3.5rem; }
+            .midi-adj-btn { width: 36px; height: 36px; }
+            .midi-connect-btn { font-size: 0.8rem; padding: 0.4rem 0.8rem; }
+
+            /* Footer */
+            .site-footer { font-size: 0.7rem; padding: 1rem 0 0.4rem; }
         }
     </style>
 </head>
 <!-- ====================================================================
      HTML STRUCTURE:
      1. Header            — title + subtitle
-     2. Input Card        — swara input, preset buttons, options (key, sound)
-     3. Output Card       — generated palta lines, playback bar, legend
+     2. Input Card        — Sa= key selector, swara selector piano,
+                            common/special/my pattern presets,
+                            custom text input, generate button
+     3. Output Card       — sound options, playback bar, include avarohi,
+                            pattern info, generated aarohi/avarohi lines, legend
      4. MIDI Card         — MIDI keyboard connection + sound controls
+     5. Footer            — developer credit
      ==================================================================== -->
 <body>
     <div class="container">
@@ -1097,16 +1239,6 @@
                 </div>
             </div>
 
-            <!-- Swara text input — accepts full names (Sa Re Ga) or short (S R G) -->
-            <div class="input-group">
-                <label for="sequence-input">Enter the first line of the alankar</label>
-                <input type="text" id="sequence-input" placeholder="e.g. Sa Re Ga Ma" autocomplete="off" spellcheck="false">
-                <div class="help-text">
-                    Swaras: <strong>Sa Re Ga Ma Pa Dha Ni</strong> (or S R G M P D N)<br>
-                    Lower octave: prefix with dot (<strong>.Sa</strong>) &nbsp;|&nbsp; Upper octave: suffix with apostrophe (<strong>Sa'</strong>)
-                </div>
-            </div>
-
             <div class="presets">
                 <div class="presets-label">Common patterns:</div>
                 <div class="preset-chips">
@@ -1121,11 +1253,44 @@
                 </div>
             </div>
 
-            <div class="options">
-                <label>
-                    <input type="checkbox" id="include-descending" checked>
-                    Include Avarohi (descending)
-                </label>
+            <div class="presets">
+                <div class="presets-label">Special patterns:</div>
+                <div class="preset-chips">
+                    <button class="preset-btn special-preset-btn" data-special="sa-x">SR, SG, Sm, SP, SD, SN, SS'</button>
+                    <button class="preset-btn special-preset-btn" data-special="x-sa">RS, GS, mS, PS, DS, NS, S'S</button>
+                </div>
+            </div>
+
+            <div class="presets">
+                <div class="presets-label">My patterns:</div>
+                <div class="preset-chips">
+                    <button class="preset-btn" data-pattern="SGSR">Sa Ga Sa Re</button>
+                    <button class="preset-btn" data-pattern="SRGmSGRm">Sa Re Ga ma Sa Ga Re ma</button>
+                    <button class="preset-btn" data-pattern="SRRSRGRS">Sa Re Re Sa Re Ga Re Sa</button>
+                    <button class="preset-btn" data-pattern="S.NR.NRGmG">Sa .Ni Re .Ni Re Ga ma Ga</button>
+                </div>
+            </div>
+
+            <!-- Swara text input — custom palta from user input -->
+            <div class="input-group">
+                <label for="sequence-input">Generate your own palta/alankar which starts with</label>
+                <input type="text" id="sequence-input" placeholder="e.g. Sa Re Ga Ma" autocomplete="off" spellcheck="false">
+                <div class="help-text">
+                    Swaras: <strong>Sa Re Ga Ma Pa Dha Ni</strong> (or S R G M P D N)<br>
+                    Lower octave: prefix with dot (<strong>.Sa</strong>) &nbsp;|&nbsp; Upper octave: suffix with apostrophe (<strong>Sa'</strong>)
+                </div>
+            </div>
+
+            <button class="generate-btn" id="generate-btn">Generate</button>
+
+            <div id="error-container"></div>
+        </div>
+
+        <!-- ── 3. Output Card (hidden until palta is generated) ── -->
+        <div class="card output-card" id="output-card">
+            <div class="output-header">
+                <div class="output-title">Generated Palta</div>
+                <button class="copy-btn" id="copy-btn">Copy as Text</button>
             </div>
 
             <div class="sound-options" id="sound-options">
@@ -1161,17 +1326,6 @@
                 </label>
             </div>
 
-            <button class="generate-btn" id="generate-btn">Generate Palta</button>
-
-            <div id="error-container"></div>
-        </div>
-
-        <!-- ── 3. Output Card (hidden until palta is generated) ── -->
-        <div class="card output-card" id="output-card">
-            <div class="output-header">
-                <div class="output-title">Generated Palta</div>
-                <button class="copy-btn" id="copy-btn">Copy as Text</button>
-            </div>
             <div class="playback-bar">
                 <div class="playback-left">
                     <div class="tempo-group">
@@ -1187,8 +1341,8 @@
                     </div>
                     <div class="tempo-group">
                         <label for="tempo-slider">Tempo</label>
-                        <input type="range" id="tempo-slider" class="tempo-slider" min="60" max="480" value="138" step="5">
-                        <input type="number" id="tempo-input" class="tempo-input" min="60" max="480" value="138">
+                        <input type="range" id="tempo-slider" class="tempo-slider" min="60" max="480" value="102" step="5">
+                        <input type="number" id="tempo-input" class="tempo-input" min="60" max="480" value="102">
                         <span class="tempo-unit">BPM</span>
                     </div>
                 </div>
@@ -1196,6 +1350,12 @@
                     <button class="play-btn" id="play-btn">&#9654; Play Both</button>
                     <label class="repeat-label"><input type="checkbox" id="repeat-all"> Repeat</label>
                 </div>
+            </div>
+            <div class="options">
+                <label>
+                    <input type="checkbox" id="include-descending" checked>
+                    Include Avarohi (descending)
+                </label>
             </div>
             <div id="pattern-info" class="pattern-info"></div>
             <div id="output-lines"></div>
@@ -1272,17 +1432,24 @@
                 </div>
             </div>
         </div>
+
+        <footer class="site-footer">
+            Developed by Muneer Ahmed Shaik
+        </footer>
     </div>
 
     <script>
         // ================================================================
-        // JAVASCRIPT — Six subsystems:
-        //   1. SWARA PARSER        (lines marked ── Swara)
-        //   2. PALTA GENERATOR     (lines marked ── Generate)
-        //   3. RENDERER            (lines marked ── Render)
-        //   4. AUDIO ENGINE        (lines marked ── Audio)
-        //   5. PLAYBACK ENGINE     (lines marked ── Playback)
-        //   6. MIDI KEYBOARD       (lines marked ── MIDI)
+        // JAVASCRIPT — Six subsystems + event listeners:
+        //   1. SWARA PARSER        — input parsing, nearest-octave, octave markers
+        //   2. PALTA GENERATOR     — standard + special pattern generation
+        //   3. RENDERER            — DOM construction for palta lines
+        //   4. AUDIO ENGINE        — Web Audio synthesis, dynamic SWARA_SEMITONES
+        //   5. PLAYBACK ENGINE     — scheduled playback, doGenerate, doGenerateSpecial,
+        //                            reRenderPalta, updateSwaraDisplayName
+        //   6. MIDI KEYBOARD       — Web MIDI API for external keyboards
+        //   EVENT LISTENERS        — UI wiring: presets, special presets, piano selector,
+        //                            include avarohi toggle, key-select, sound options
         // ================================================================
 
 
@@ -1531,6 +1698,39 @@
                     result.descending.push(descOffsets.map(o => base + o));
                 }
                 result.landingBottom = baseNote + 7 - descCount;
+            }
+
+            return result;
+        }
+
+        // ── Special palta generator ──────────────────────────
+        // "sa-x": Sa paired with each ascending swara: SR, SG, Sm, SP, SD, SN, SS'
+        // "x-sa": Each ascending swara paired back to Sa: RS, GS, mS, PS, DS, NS, S'S
+        // Aarohi walks up the scale, Avarohi mirrors back down.
+        function generateSpecialPalta(type, includeDescending) {
+            const sa = 7; // middle Sa
+            const result = { ascending: [], descending: [], landingTop: null, landingBottom: null };
+
+            // Ascending: pair Sa with Re, Ga, Ma, Pa, Dha, Ni, Sa'
+            for (let step = 1; step <= 7; step++) {
+                if (type === 'sa-x') {
+                    result.ascending.push([sa, sa + step]);
+                } else {
+                    result.ascending.push([sa + step, sa]);
+                }
+            }
+            result.landingTop = sa + 7;
+
+            if (includeDescending) {
+                // Descending: pair upper Sa with Ni, Dha, Pa, Ma, Ga, Re, Sa
+                for (let step = 1; step <= 7; step++) {
+                    if (type === 'sa-x') {
+                        result.descending.push([sa + 7, sa + 7 - step]);
+                    } else {
+                        result.descending.push([sa + 7 - step, sa + 7]);
+                    }
+                }
+                result.landingBottom = sa;
             }
 
             return result;
@@ -2377,12 +2577,13 @@
         let currentUseShort = false;    // Whether to display short swara names (S R G vs Sa Re Ga)
         let ascLineCount = 7;           // Number of ascending lines (adjustable via +/- buttons)
         let descLineCount = 7;          // Number of descending lines
+        let currentSpecialType = null;  // null = normal palta, 'sa-x' or 'x-sa' = special
         let playbackState = null;       // { audioCtx, timers, allOscillators } — null when stopped
         let activePlayBtn = null;       // DOM button currently showing "Stop"
 
         function getPlaybackParams() {
             const key = document.getElementById('key-select').value;
-            const tempo = parseInt(document.getElementById('tempo-input').value) || 138;
+            const tempo = parseInt(document.getElementById('tempo-input').value) || 102;
             const beatCount = parseInt(document.getElementById('beat-select').value);
             const skipIntroCb = document.getElementById('skip-intro-beats');
             const skipTransCb = document.getElementById('skip-transition-beats');
@@ -2593,8 +2794,15 @@
         }
 
         // ── Main generate action ────────────────────────────
+        function setTempo(bpm) {
+            document.getElementById('tempo-slider').value = bpm;
+            document.getElementById('tempo-input').value = bpm;
+        }
+
         function doGenerate() {
-            stopPlayback(); // stop any active playback
+            stopPlayback();
+            currentSpecialType = null;
+            setTempo(102);
 
             const input = document.getElementById('sequence-input').value;
             const includeDesc = document.getElementById('include-descending').checked;
@@ -2643,6 +2851,39 @@
             outputCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
 
+        // ── Generate special pattern (SR SG... or RS GS...) ──
+        function doGenerateSpecial(type) {
+            stopPlayback();
+            currentSpecialType = type;
+            setTempo(60);
+
+            const includeDesc = document.getElementById('include-descending').checked;
+            const beatCount = parseInt(document.getElementById('beat-select').value);
+            const errorContainer = document.getElementById('error-container');
+            const outputCard = document.getElementById('output-card');
+
+            errorContainer.innerHTML = '';
+            outputCard.classList.remove('visible');
+
+            currentParsedNotes = [7]; // Sa (middle)
+            currentUseShort = true;
+
+            const label = type === 'sa-x' ? 'SR, SG, Sm, SP, SD, SN, SS\u2019' : 'RS, GS, mS, PS, DS, NS, S\u2019S';
+            document.getElementById('sequence-input').value = label;
+
+            const palta = generateSpecialPalta(type, includeDesc);
+            currentPaltaData = palta;
+
+            document.getElementById('pattern-info').innerHTML = '<strong>Special pattern:</strong> ' + label;
+
+            renderPalta(palta, true, includeDesc, beatCount);
+            outputCard.classList.add('visible');
+
+            outputCard.dataset.plainText = paltaToText(palta, true, includeDesc, beatCount);
+
+            outputCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
         // ── Re-render after add/delete ──────────────────────
         function reRenderPalta() {
             if (!currentParsedNotes) return;
@@ -2657,7 +2898,9 @@
             const savedSkipIntro = skipIntroCb ? skipIntroCb.checked : false;
             const savedSkipTrans = skipTransCb ? skipTransCb.checked : false;
 
-            const palta = generatePalta(currentParsedNotes, includeDesc, ascLineCount, descLineCount);
+            const palta = currentSpecialType
+                ? generateSpecialPalta(currentSpecialType, includeDesc)
+                : generatePalta(currentParsedNotes, includeDesc, ascLineCount, descLineCount);
             currentPaltaData = palta;
 
             renderPalta(palta, currentUseShort, includeDesc, beatCount);
@@ -2713,11 +2956,18 @@
             if (e.key === 'Enter') doGenerate();
         });
 
-        // Preset buttons
-        document.querySelectorAll('.preset-btn').forEach(btn => {
+        // Preset buttons (common patterns)
+        document.querySelectorAll('.preset-btn:not(.special-preset-btn)').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.getElementById('sequence-input').value = btn.dataset.pattern;
                 doGenerate();
+            });
+        });
+
+        // Special preset buttons (SR SG... / RS GS...)
+        document.querySelectorAll('.special-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                doGenerateSpecial(btn.dataset.special);
             });
         });
 
@@ -2811,6 +3061,17 @@
             const input = document.getElementById('sequence-input').value;
             if (input.trim() && document.getElementById('output-card').classList.contains('visible')) {
                 doGenerate();
+            }
+        });
+
+        // Include Avarohi checkbox — re-render to show/hide descending section
+        document.getElementById('include-descending').addEventListener('change', () => {
+            if (document.getElementById('output-card').classList.contains('visible')) {
+                if (currentSpecialType) {
+                    doGenerateSpecial(currentSpecialType);
+                } else if (currentParsedNotes) {
+                    reRenderPalta();
+                }
             }
         });
 
