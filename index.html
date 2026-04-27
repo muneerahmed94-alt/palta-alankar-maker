@@ -28,9 +28,9 @@
 
   UI LAYOUT (Input Card, top to bottom):
     1. Sa = key selector     — sets the root note (C through B)
-    2. Tanpura               — drone with strings, pitch, volume, tempo, jawari controls
-    3. Swara Selector        — chromatic piano keyboard with fixed Western note labels
+    2. Swara Selector        — chromatic piano keyboard with fixed Western note labels
                                 (C–B) and movable swara labels that shift with Sa =
+    3. Tanpura               — drone with strings, pitch, volume, tempo, jawari controls
     4. Common patterns       — 12 palta presets (repetitions, ascending, direction changes)
     5. Special patterns      — scale, SR/SG pairs, RS/GS pairs, expanding
     6. My patterns           — user's custom saved patterns
@@ -140,9 +140,9 @@
          CSS: All styles are inline. Organized into these sections:
          1. Base / Layout       — body, container, header, cards
          2. Input Card          — form elements, presets, options
-         3. Tanpura Controls    — drone section with start/stop, tuning, sliders
-         4. Swara Selector      — chromatic piano keyboard (white/black keys,
+         3. Swara Selector      — chromatic piano keyboard (white/black keys,
                                   swara labels, note labels, selection states)
+         4. Tanpura Controls    — drone section with start/stop, tuning, sliders
          5. Output Card         — palta display, sound options, playback bar,
                                   include avarohi, legend
          6. Playback Controls   — play/stop buttons, tempo, beat selector
@@ -1297,6 +1297,7 @@
      HTML STRUCTURE:
      1. Header            — title + subtitle
      2. Input Card        — Sa= key selector, swara selector piano,
+                            tanpura drone controls,
                             common/special/my pattern presets,
                             custom text input, generate button
      3. Output Card       — sound options, playback bar, include avarohi,
@@ -1332,6 +1333,26 @@
                         <option value="B">B</option>
                     </select>
                 </label>
+            </div>
+
+            <div class="swara-piano">
+                <div class="swara-piano-label">Swara selector:</div>
+                <div class="swara-piano-keys" id="swara-piano-keys">
+                    <!-- White keys: fixed Western notes C D E F G A B -->
+                    <div class="swara-key swara-key-white" data-chromatic="0"><span class="key-swara-label"></span><span class="key-note-label">C</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="2"><span class="key-swara-label"></span><span class="key-note-label">D</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="4"><span class="key-swara-label"></span><span class="key-note-label">E</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="5"><span class="key-swara-label"></span><span class="key-note-label">F</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="7"><span class="key-swara-label"></span><span class="key-note-label">G</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="9"><span class="key-swara-label"></span><span class="key-note-label">A</span></div>
+                    <div class="swara-key swara-key-white" data-chromatic="11"><span class="key-swara-label"></span><span class="key-note-label">B</span></div>
+                    <!-- Black keys: fixed Western notes C# D# F# G# A# -->
+                    <div class="swara-key swara-key-black" data-chromatic="1" style="left:49px"><span class="key-swara-label"></span><span class="key-note-label">C#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="3" style="left:119px"><span class="key-swara-label"></span><span class="key-note-label">D#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="6" style="left:259px"><span class="key-swara-label"></span><span class="key-note-label">F#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="8" style="left:329px"><span class="key-swara-label"></span><span class="key-note-label">G#</span></div>
+                    <div class="swara-key swara-key-black" data-chromatic="10" style="left:399px"><span class="key-swara-label"></span><span class="key-note-label">A#</span></div>
+                </div>
             </div>
 
             <!-- Tanpura drone controls -->
@@ -1372,26 +1393,6 @@
                         Jawari&nbsp;
                         <input type="range" class="tanpura-slider" id="tanpura-jawari" min="0" max="100" value="40">
                     </label>
-                </div>
-            </div>
-
-            <div class="swara-piano">
-                <div class="swara-piano-label">Swara selector:</div>
-                <div class="swara-piano-keys" id="swara-piano-keys">
-                    <!-- White keys: fixed Western notes C D E F G A B -->
-                    <div class="swara-key swara-key-white" data-chromatic="0"><span class="key-swara-label"></span><span class="key-note-label">C</span></div>
-                    <div class="swara-key swara-key-white" data-chromatic="2"><span class="key-swara-label"></span><span class="key-note-label">D</span></div>
-                    <div class="swara-key swara-key-white" data-chromatic="4"><span class="key-swara-label"></span><span class="key-note-label">E</span></div>
-                    <div class="swara-key swara-key-white" data-chromatic="5"><span class="key-swara-label"></span><span class="key-note-label">F</span></div>
-                    <div class="swara-key swara-key-white" data-chromatic="7"><span class="key-swara-label"></span><span class="key-note-label">G</span></div>
-                    <div class="swara-key swara-key-white" data-chromatic="9"><span class="key-swara-label"></span><span class="key-note-label">A</span></div>
-                    <div class="swara-key swara-key-white" data-chromatic="11"><span class="key-swara-label"></span><span class="key-note-label">B</span></div>
-                    <!-- Black keys: fixed Western notes C# D# F# G# A# -->
-                    <div class="swara-key swara-key-black" data-chromatic="1" style="left:49px"><span class="key-swara-label"></span><span class="key-note-label">C#</span></div>
-                    <div class="swara-key swara-key-black" data-chromatic="3" style="left:119px"><span class="key-swara-label"></span><span class="key-note-label">D#</span></div>
-                    <div class="swara-key swara-key-black" data-chromatic="6" style="left:259px"><span class="key-swara-label"></span><span class="key-note-label">F#</span></div>
-                    <div class="swara-key swara-key-black" data-chromatic="8" style="left:329px"><span class="key-swara-label"></span><span class="key-note-label">G#</span></div>
-                    <div class="swara-key swara-key-black" data-chromatic="10" style="left:399px"><span class="key-swara-label"></span><span class="key-note-label">A#</span></div>
                 </div>
             </div>
 

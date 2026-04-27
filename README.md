@@ -115,8 +115,8 @@ The app is a single `index.html` file with no external dependencies (except Goog
 Organized into 9 sections:
 1. **Base / Layout** — body, container, header, cards
 2. **Input Card** — form elements, preset chip buttons
-3. **Tanpura Controls** — drone section with start/stop, tuning selects, volume/tempo/jawari sliders
-4. **Swara Selector** — chromatic piano keyboard with white/black keys, swara labels, note labels, selection states, fixed key styling
+3. **Swara Selector** — chromatic piano keyboard with white/black keys, swara labels, note labels, selection states, fixed key styling
+4. **Tanpura Controls** — drone section with start/stop, tuning selects, volume/tempo/jawari sliders
 5. **Output Card** — palta line display, direction headers, add/delete buttons
 6. **Playback Controls** — key/sound/beat selectors, tempo slider, play/stop buttons
 7. **MIDI Card** — connection UI, sound options, octave/transpose adjustment buttons
