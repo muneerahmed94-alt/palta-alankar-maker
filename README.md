@@ -112,8 +112,7 @@ Three categories of preset patterns:
 ### Mobile Background Playback (iOS / Android)
 Designed for practising while driving with the phone locked. When either the tanpura or palta (with **Repeat** enabled) is playing:
 
-- **Direct audio output** — Web Audio connects straight to `audioCtx.destination` for clean, low-latency sound. No MediaStream bridge (an earlier version tried that; it caused foreground phasing and background stutter).
-- **Silent `<audio>` hint** — a hidden `<audio>` element loops a tiny silent WAV at zero volume. This is purely a signal to iOS that the tab is producing media, which extends how long the AudioContext survives in the background. It does NOT carry the synth signal.
+- **`<audio>`-element bridge** — WebAudio output goes through a `MediaStreamAudioDestinationNode` whose `.stream` is the `srcObject` of a hidden `<audio>` element. The `<audio>` element plays that stream to the speakers. iOS only keeps a tab audible in the background when an active `HTMLMediaElement` owns the audio — this routing makes that true. **Single path**, no fanout to `audioCtx.destination`, so no dual-output phasing (an earlier attempt had both paths connected, which caused echo).
 - **Tanpura uses a pre-rendered loop buffer** — one full string cycle is rendered once to an `AudioBuffer` via `OfflineAudioContext`, then played with `AudioBufferSourceNode.loop = true`. The audio thread loops it with no JS timer involvement.
 - **Palta uses an aggressive pre-scheduling horizon** — iteration notes are scheduled on the Web Audio timeline (audio thread). Horizon is `HORIZON_FG_SEC` (~25 s) in foreground, so changes to tempo/skip toggles take effect within one iteration. On `visibilitychange` / `blur` (tab hidden / screen locked), horizon expands to `HORIZON_BG_SEC` (~6 min) and the topup runs immediately, queueing enough audio on the audio thread to play through long stretches of JS-timer throttling.
 - **Media Session API** — the lock screen shows "Tanpura Drone" or "Palta Playback" with an artist line. The lock-screen pause button is wired to the app's stop action.
@@ -192,7 +191,7 @@ All synthesis uses the Web Audio API (no audio samples).
 - **Metronome**: Two sine oscillators (880 Hz + 1760 Hz) with instant attack and fast decay for a wood-block click sound.
 
 **Mobile background keepalive:**
-- `ensureKeepaliveAudioElement()` / `startKeepalive()` / `stopKeepaliveIfIdle()` — manages a hidden, silent, zero-volume `<audio>` element that loops a short WAV. Just its existence playing is enough for iOS to treat the tab as an active media session; the synth signal is NOT bridged through it (that caused phasing).
+- `ensureKeepaliveAudioElement()` / `connectToKeepalive(ctx)` / `stopKeepaliveIfIdle()` — manages a hidden `<audio>` element whose `srcObject` is the `stream` of a `MediaStreamAudioDestinationNode`. WebAudio output flows through the element to the speakers; this is the only output path (no fanout). Falls back to `audioCtx.destination` on browsers without `MediaStreamAudioDestinationNode`.
 - `setMediaSessionMetadata()` / `setMediaSessionHandlers()` — Media Session API integration for the lock screen.
 - `trackAudioContext()` — registers a context so `visibilitychange` / `pageshow` / `focus` listeners can call `resume()` on it when the user returns to the tab.
 - `renderToBuffer(ctx, duration, channels, renderFn)` — helper that runs an OfflineAudioContext render and returns the resulting `AudioBuffer`. Used by the tanpura to pre-bake one loop cycle.

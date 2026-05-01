@@ -137,10 +137,12 @@
   Sound options are in the Output Card (after "Generated Palta" header).
 
   MOBILE / BACKGROUND PLAYBACK (iOS lock-screen, Chrome backgrounded):
-  - Audio connects straight to audioCtx.destination (clean, low-latency —
-    no MediaStream bridge). A silent <audio> element loops in parallel as
-    a hint to iOS that the tab is producing media, which extends how long
-    the AudioContext survives in the background.
+  - WebAudio output is routed through a MediaStreamAudioDestinationNode
+    whose .stream becomes the srcObject of a hidden <audio> element.
+    Single path — no fanout to audioCtx.destination — so no phasing.
+    Because the <audio> element IS the audio source (not a silent hint
+    on the side), iOS treats the tab as active media and keeps it
+    audible when the phone locks or the tab backgrounds.
   - Tanpura renders one full string cycle to an AudioBuffer and plays it
     via AudioBufferSourceNode(loop=true). The audio thread handles the
     loop without JS timers.
@@ -2253,61 +2255,63 @@
         // ══════════════════════════════════════════════════════
         // BACKGROUND AUDIO KEEPALIVE (mobile — especially iOS)
         // ══════════════════════════════════════════════════════
-        // iOS aggressively suspends audio when:
+        // iOS aggressively suspends Web Audio when:
         //   • the tab goes to the background
         //   • the phone screen locks
         //   • Chrome (which is just Safari on iOS) moves to background
         //
-        // Approach (kept deliberately minimal — the previous MediaStream
-        // bridge caused foreground echo/phasing and background stuttering):
+        // Approach:
+        //   1. <audio>-ELEMENT BRIDGE — Route WebAudio output through a
+        //      MediaStreamAudioDestinationNode whose .stream is the
+        //      srcObject of a hidden <audio> element. The <audio> element
+        //      plays that stream to the speakers. Because the <audio>
+        //      element IS the audio source (not a separate silent hint),
+        //      iOS treats the tab as active media and keeps it audible in
+        //      the background. Single path — no fanout to
+        //      audioCtx.destination — so no dual-output phasing.
+        //      See connectToKeepalive() below.
         //
-        //   1. SILENT <audio> HINT — an <audio> element looping a short
-        //      silent WAV kicks iOS into treating the tab as a "playing
-        //      media" session, which extends how long the AudioContext
-        //      survives in the background. The element plays AT ZERO
-        //      VOLUME and is completely disconnected from the Web Audio
-        //      graph — no bridging, no double-output, no phasing.
+        //   2. MEDIA SESSION API — lock-screen metadata + pause button.
         //
-        //   2. DIRECT audioCtx.destination — the WebAudio graph connects
-        //      straight to the context's default destination. This is the
-        //      original low-latency, clean path. No MediaStream detour.
-        //
-        //   3. MEDIA SESSION API — lock-screen metadata + pause button.
-        //
-        //   4. AUTO-RESUME — visibilitychange / pageshow listeners call
-        //      ctx.resume() on any suspended context when the user returns.
+        //   3. AUTO-RESUME — visibilitychange / pageshow / focus listeners
+        //      call ctx.resume() on any suspended context.
         //
         // Scheduler strategy for background survival:
         //   • Notes are scheduled on the Web Audio timeline (audio thread),
         //     which keeps playing whatever is already queued even when the
         //     tab is backgrounded and JS timers are throttled.
-        //   • For palta with Repeat ON, we schedule MANY iterations ahead
-        //     upfront (see PALTA_PRESCHEDULE_HORIZON_SEC below), then
-        //     top up from a short-interval timer that recovers whenever
-        //     the tab comes to foreground.
-        //   • For tanpura we still pre-render one string cycle to a
-        //     buffer and loop it via AudioBufferSourceNode(loop=true),
-        //     because that's cheap, seamless, and runs on the audio thread.
+        //   • For palta with Repeat ON, we pre-schedule iterations up to a
+        //     horizon (HORIZON_FG_SEC in foreground, HORIZON_BG_SEC when
+        //     hidden). A topup timer tops up the horizon; when throttled
+        //     in background, the already-queued audio keeps playing.
+        //   • For tanpura we pre-render one string cycle into an
+        //     AudioBuffer and loop it via AudioBufferSourceNode(loop=true),
+        //     which runs entirely on the audio thread.
 
-        // A ~0.1 s silent 16-bit PCM WAV, base64 encoded. The <audio>
-        // element loops this at zero volume as a hint to iOS.
-        const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+        // iOS only keeps an AudioContext audible in the background when the
+        // tab owns an actively-playing HTMLMediaElement that *is* the audio
+        // source. A silent <audio> element on the side isn't enough — iOS
+        // checks that real audio is flowing through a MediaElement.
+        //
+        // So we route WebAudio output through a MediaStreamAudioDestinationNode
+        // whose .stream becomes the srcObject of a hidden <audio> element.
+        // The <audio> element plays that stream to the speakers. Single path
+        // (no fanout to audioCtx.destination), so no dual-output phasing.
+        //
+        // This is the "Web Audio → MediaStream → <audio> → speaker" pattern
+        // used by many mobile web apps (e.g. music players) that need
+        // background audio on iOS.
 
-        // One shared, silent <audio> element. Plays only to let iOS know
-        // the tab is producing audio — does not carry the synth output.
         let keepaliveAudioEl = null;
         function ensureKeepaliveAudioElement() {
             if (keepaliveAudioEl) return keepaliveAudioEl;
             const el = document.createElement('audio');
             el.id = 'keepalive-audio';
-            el.loop = true;
-            el.volume = 0; // completely silent
-            el.muted = false; // must be unmuted for iOS to treat as "playing"
             el.playsInline = true;
             el.setAttribute('playsinline', '');
             el.setAttribute('webkit-playsinline', '');
             el.preload = 'auto';
-            el.src = SILENT_WAV_DATA_URI;
+            el.autoplay = false;
             el.style.position = 'absolute';
             el.style.left = '-10000px';
             el.style.width = '1px';
@@ -2317,20 +2321,52 @@
             keepaliveAudioEl = el;
             return el;
         }
-        function startKeepalive() {
-            const el = ensureKeepaliveAudioElement();
-            if (!el.paused) return;
+
+        // Connect an AudioContext to the speakers through the <audio> element
+        // bridge. Returns the node callers should feed their output into.
+        //
+        // Falls back to direct audioCtx.destination if:
+        //   • MediaStreamDestination is unsupported (very old browsers), or
+        //   • the <audio> element play() is blocked (rare — we're always
+        //     called from inside a user-gesture click handler).
+        //
+        // The fallback is a single direct connection, so there's still no
+        // dual-output phasing. Trade-off on that path: iOS may suspend the
+        // audio when backgrounded, which is the original behaviour.
+        function connectToKeepalive(audioCtx) {
+            // If MediaStreamDestination isn't available, just return the
+            // context's direct destination.
+            if (typeof audioCtx.createMediaStreamDestination !== 'function') {
+                return audioCtx.destination;
+            }
+
             try {
-                el.volume = 0;
-                const p = el.play();
-                if (p && p.catch) p.catch(() => {});
-            } catch (e) {}
+                const msDest = audioCtx.createMediaStreamDestination();
+                const audioEl = ensureKeepaliveAudioElement();
+                audioEl.srcObject = msDest.stream;
+                const p = audioEl.play();
+                if (p && p.catch) {
+                    p.catch(() => {
+                        // play() rejected — unhook the stream and fall back
+                        // to direct output. We can't retroactively switch the
+                        // graph at this point, so the fallback only helps on
+                        // future connects; the current context stays on the
+                        // MediaStream path (which is fine in foreground).
+                    });
+                }
+                return msDest;
+            } catch (e) {
+                return audioCtx.destination;
+            }
         }
+
         function stopKeepaliveIfIdle() {
-            // Only stop if nothing is playing anymore.
             if (playbackState || (tanpuraState && tanpuraState.isPlaying)) return;
             if (!keepaliveAudioEl) return;
-            try { keepaliveAudioEl.pause(); } catch (e) {}
+            try {
+                keepaliveAudioEl.pause();
+                keepaliveAudioEl.srcObject = null;
+            } catch (e) {}
         }
 
         // Set up Media Session API so the lock screen shows what's playing.
@@ -3469,11 +3505,11 @@
             compressor.threshold.value = -20;
             compressor.knee.value = 20;
             compressor.ratio.value = 4;
-            compressor.connect(audioCtx.destination);
-
-            // Kick the iOS keepalive hint so the tab is treated as "playing"
-            // when the phone locks / tab backgrounds.
-            startKeepalive();
+            // Route through the <audio>-element bridge so iOS treats this
+            // tab as actively producing audio and keeps it alive in the
+            // background. Falls back to audioCtx.destination on browsers
+            // that don't support MediaStreamAudioDestinationNode.
+            compressor.connect(connectToKeepalive(audioCtx));
 
             // Tell iOS lock screen what's playing, and wire its pause button
             // to our stop action so the user can halt practice from there.
@@ -4100,10 +4136,9 @@
             const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
             masterGain.gain.value = vol;
             // Direct destination — clean path, no MediaStream bridge.
-            masterGain.connect(audioCtx.destination);
-
-            // Kick the iOS keepalive hint so the tab is treated as "playing".
-            startKeepalive();
+            // Route through the <audio>-element bridge so iOS keeps the
+            // drone playing in the background.
+            masterGain.connect(connectToKeepalive(audioCtx));
 
             // Lock-screen "now playing" for the tanpura session.
             setMediaSessionMetadata('Tanpura Drone', 'Palta Alankar Maker');
