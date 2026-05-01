@@ -275,6 +275,8 @@ The synthetic impulse response lives in `getHarmoniumRoomIR()` (tail length, dec
 ### Adding a new preset pattern
 Add a `<button class="preset-btn" data-pattern="Sa Ga Re Ma">Sa Ga Re Ma</button>` inside the appropriate `.preset-chips` div. The event listener is already wired up via `querySelectorAll('.preset-btn:not(.special-preset-btn)')`.
 
+For guruji-prescribed patterns where the traditional practice count differs from what the formula computes, add a `data-lines="N"` attribute to pin the count: `<button class="preset-btn" data-pattern="SRRSRGRS" data-lines="7">Sa Re Re Sa Re Ga Re Sa</button>`. The user can still add/remove lines afterwards with the +/- buttons.
+
 ### Adding a new special pattern type
 1. Add a new `if (type === 'your-type')` branch inside `generateSpecialPalta()` for the new type.
 2. Add a `<button class="preset-btn special-preset-btn" data-special="your-type">Label</button>` in the special patterns `.preset-chips` div.

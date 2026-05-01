@@ -1443,7 +1443,7 @@
                 <div class="preset-chips">
                     <button class="preset-btn" data-pattern="SGSR">Sa Ga Sa Re</button>
                     <button class="preset-btn" data-pattern="SRGmSGRm">Sa Re Ga ma Sa Ga Re ma</button>
-                    <button class="preset-btn" data-pattern="SRRSRGRS">Sa Re Re Sa Re Ga Re Sa</button>
+                    <button class="preset-btn" data-pattern="SRRSRGRS" data-lines="7">Sa Re Re Sa Re Ga Re Sa</button>
                     <button class="preset-btn" data-pattern="S.NR.NRGmG">Sa .Ni Re .Ni Re Ga ma Ga</button>
                 </div>
             </div>
@@ -3442,7 +3442,7 @@
             document.getElementById('tempo-input').value = bpm;
         }
 
-        function doGenerate(isPreset) {
+        function doGenerate(isPreset, forcedLines) {
             stopPlayback();
             currentSpecialType = null;
             currentIsPreset = !!isPreset;
@@ -3489,14 +3489,26 @@
             // and non-monotonic ones that stay at/above Sa (SGSR=7, SRGRS=8),
             // while extending patterns like S.NR.NRGmG from 6 to 7 lines so
             // the last line reaches the expected upper range.
+            //
+            // Guruji-prescribed patterns whose traditional practice count
+            // doesn't match this formula carry a `data-lines` attribute on
+            // their preset button; that value is passed in as `forcedLines`
+            // and overrides the formula. Example: "Sa Re Re Sa Re Ga Re Sa"
+            // (SRRSRGRS) is traditionally practised for 7 lines, though the
+            // formula would compute 8.
             if (isPreset) {
-                const baseNote = parsed.notes[0];
-                const offsets = parsed.notes.map(n => n - baseNote);
-                const lastOffset = offsets[offsets.length - 1];
-                const minOffset = Math.min(...offsets);
-                const dip = Math.max(0, -minOffset);
-                ascLineCount = Math.max(1, 8 - lastOffset + dip);
-                descLineCount = Math.max(1, 8 - lastOffset + dip);
+                if (forcedLines && forcedLines > 0) {
+                    ascLineCount = forcedLines;
+                    descLineCount = forcedLines;
+                } else {
+                    const baseNote = parsed.notes[0];
+                    const offsets = parsed.notes.map(n => n - baseNote);
+                    const lastOffset = offsets[offsets.length - 1];
+                    const minOffset = Math.min(...offsets);
+                    const dip = Math.max(0, -minOffset);
+                    ascLineCount = Math.max(1, 8 - lastOffset + dip);
+                    descLineCount = Math.max(1, 8 - lastOffset + dip);
+                }
             } else {
                 ascLineCount = 7;
                 descLineCount = 7;
@@ -3887,11 +3899,15 @@
             if (e.key === 'Enter') doGenerate();
         });
 
-        // Preset buttons (common patterns)
+        // Preset buttons (common patterns + my patterns).
+        // Optional data-lines attribute overrides the auto-calculated line
+        // count — used for guruji-prescribed patterns where the traditional
+        // practice count doesn't match a generic formula.
         document.querySelectorAll('.preset-btn:not(.special-preset-btn)').forEach(btn => {
             btn.addEventListener('click', () => {
                 document.getElementById('sequence-input').value = btn.dataset.pattern;
-                doGenerate(true);
+                const forcedLines = btn.dataset.lines ? parseInt(btn.dataset.lines, 10) : null;
+                doGenerate(true, forcedLines);
             });
         });
 
