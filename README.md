@@ -110,19 +110,24 @@ Three categories of preset patterns:
 - Auto-detects MIDI devices with hot-plug support
 
 ### Mobile Background Playback (iOS / Android)
-Designed for practising while driving with the phone locked. When either the tanpura or palta (with **Repeat** enabled) is playing:
+Designed for practising while driving with the phone locked. iOS throttles Web Audio in backgrounded tabs — even routing through a MediaStream bridge slows down and stutters. The only approach that plays full-speed in background is to hand a self-contained media file to the platform's native audio pipeline. So both palta and tanpura work the same way:
 
-- **`<audio>`-element bridge** — WebAudio output goes through a `MediaStreamAudioDestinationNode` whose `.stream` is the `srcObject` of a hidden `<audio>` element. The `<audio>` element plays that stream to the speakers. iOS only keeps a tab audible in the background when an active `HTMLMediaElement` owns the audio — this routing makes that true. **Single path**, no fanout to `audioCtx.destination`, so no dual-output phasing (an earlier attempt had both paths connected, which caused echo).
-- **Tanpura uses a pre-rendered loop buffer** — one full string cycle is rendered once to an `AudioBuffer` via `OfflineAudioContext`, then played with `AudioBufferSourceNode.loop = true`. The audio thread loops it with no JS timer involvement.
-- **Palta uses an aggressive pre-scheduling horizon** — iteration notes are scheduled on the Web Audio timeline (audio thread). Horizon is `HORIZON_FG_SEC` (~25 s) in foreground, so changes to tempo/skip toggles take effect within one iteration. On `visibilitychange` / `blur` (tab hidden / screen locked), horizon expands to `HORIZON_BG_SEC` (~6 min) and the topup runs immediately, queueing enough audio on the audio thread to play through long stretches of JS-timer throttling.
-- **Media Session API** — the lock screen shows "Tanpura Drone" or "Palta Playback" with an artist line. The lock-screen pause button is wired to the app's stop action.
-- **Auto-resume on return** — `visibilitychange` / `pageshow` / `focus` handlers resume any suspended `AudioContext` and re-kick the schedule as soon as the user unlocks the phone.
+1. **Render offline.** `OfflineAudioContext` runs the same synthesis functions used for live playback and produces an `AudioBuffer` of one full iteration (palta) or one full string cycle (tanpura).
+2. **Encode to WAV.** `audioBufferToWavBlob()` writes the buffer as a 16-bit PCM WAV `Blob` in memory (no network, no build step).
+3. **Play through an `<audio>` element.** `URL.createObjectURL(blob)` → `audio.src` → `audio.play()`, with `loop = true` for tanpura and for palta Repeat mode.
+
+Native `<audio>` playback uses iOS's AudioToolbox / AVFoundation, which keeps running when the tab backgrounds, the phone locks, or the screen sleeps.
+
+Other bits:
+
+- **Gesture priming** — a 10 ms silent WAV is loaded into the `<audio>` element *inside the click handler* before the async render begins. That claim to an active user gesture lets the subsequent blob swap-and-play go through iOS autoplay policy when the render finishes ~200 ms later.
+- **Media Session API** — the lock screen shows "Tanpura Drone" or "Palta Playback". The lock-screen pause button is wired to the app's stop action.
+- **Auto-resume on return** — `visibilitychange` / `pageshow` / `focus` handlers restart any paused `<audio>` element and `resume()` any suspended `AudioContext`.
 
 Caveats:
-- Visual note highlights are only scheduled for the first `HIGHLIGHT_WINDOW_SEC` (~12 s) of audio, so they stop updating before the repeat loop finishes. That keeps thousands of queued `setTimeout` calls off the JS thread. The screen is locked for driving practice anyway.
-- Tempo / tuning / pitch / jawari changes mid-playback take effect after the currently-queued iterations finish. In foreground that's ≤25 s; in background it can be a few minutes.
-- Volume slider applies live to the tanpura's masterGain without re-rendering.
-- This is iOS's best-effort contract — Safari can still suspend audio indefinitely when it decides the tab has been in the background "too long" (usually many minutes). Not a perfect guarantee.
+- Changing tempo / tuning / pitch / jawari / skip toggles mid-playback doesn't take effect on the running loop — the WAV is baked. Press Stop then Play again to apply.
+- Volume slider applies live to the tanpura `<audio>` element's `.volume` (no re-render).
+- There's a small startup delay (typically under 500 ms) while the offline render completes. In practice that's smaller than clicking Stop and Play took on the previous live-scheduling version.
 
 ## Project Structure
 
@@ -190,20 +195,22 @@ All synthesis uses the Web Audio API (no audio samples).
 - **Harmonium reeds**: Source-filter model. Each reed is a `PeriodicWave` built from a 32-partial LTAS. All reeds mix into a per-brand cabinet filter (5 peaking biquads + high-shelf + lowpass) modeling the wooden enclosure, then the whole harmonium bus feeds a shared synthetic small-room convolution reverb. See `getHarmoniumReedWave()`, `HARMONIUM_BRANDS`, `buildHarmoniumCabinet()`, and `getHarmoniumReverbBus()`.
 - **Metronome**: Two sine oscillators (880 Hz + 1760 Hz) with instant attack and fast decay for a wood-block click sound.
 
-**Mobile background keepalive:**
-- `ensureKeepaliveAudioElement()` / `connectToKeepalive(ctx)` / `stopKeepaliveIfIdle()` — manages a hidden `<audio>` element whose `srcObject` is the `stream` of a `MediaStreamAudioDestinationNode`. WebAudio output flows through the element to the speakers; this is the only output path (no fanout). Falls back to `audioCtx.destination` on browsers without `MediaStreamAudioDestinationNode`.
+**Mobile background playback (offline render → WAV → `<audio>`):**
+- `renderToBuffer(sampleRate, duration, channels, renderFn)` — runs an `OfflineAudioContext` render and returns the resulting `AudioBuffer`.
+- `audioBufferToWavBlob(buffer)` — encodes an `AudioBuffer` as a 16-bit PCM WAV `Blob` (44-byte RIFF header + interleaved int16 samples).
+- `ensureMediaPlayer(name)` / `loadAndPlayBlob(name, blob)` / `stopMediaPlayer(name)` — manages a pool of hidden `<audio>` elements (one named per concurrent source: `'palta'`, `'tanpura'`). Swaps the blob URL and plays. Tracks the old URL and revokes it on swap or stop.
+- `makeSilencePrimer()` — returns a 10 ms silent WAV Blob used to prime the `<audio>` element inside a user-gesture click handler.
 - `setMediaSessionMetadata()` / `setMediaSessionHandlers()` — Media Session API integration for the lock screen.
-- `trackAudioContext()` — registers a context so `visibilitychange` / `pageshow` / `focus` listeners can call `resume()` on it when the user returns to the tab.
-- `renderToBuffer(ctx, duration, channels, renderFn)` — helper that runs an OfflineAudioContext render and returns the resulting `AudioBuffer`. Used by the tanpura to pre-bake one loop cycle.
+- `trackAudioContext()` — registers a context so `visibilitychange` / `pageshow` / `focus` listeners can call `resume()` on it.
 
 #### 5. Playback Engine
-All notes are scheduled on the Web Audio timeline (audio thread), so once queued they play reliably even if JS timers throttle. The scheduler is driven by a short "topup" timer that extends the horizon as audio is consumed.
+Palta playback uses the offline-render + `<audio>`-element pattern so it keeps playing full-speed when the tab is backgrounded on iOS:
 
-- `scheduleOneIteration(t)` — builds one iteration's note timeline from the current UI params (tempo / beats / skip) and schedules all notes at audio time `t`. Returns the audio time at which the iteration ends.
-- `scheduleIteration(t)` — entry point. Schedules the first iteration immediately, then arranges a 1 s-interval topup timer.
-- `extendPaltaSchedule()` — pre-schedules iterations until the timeline is at least `_paltaHorizonSec` ahead of `audioCtx.currentTime`. Called from the topup timer and on visibility changes.
-- Horizon flips between `HORIZON_FG_SEC` (~25 s, small for responsiveness) and `HORIZON_BG_SEC` (~6 min, large so background timer throttling doesn't starve the audio thread) based on `visibilitychange` / `blur` / `focus`.
-- `HIGHLIGHT_WINDOW_SEC` (~12 s) caps how far ahead visual highlight timers are scheduled — they'd otherwise pile up hundreds deep at a big horizon.
+- `startPlayback(mode, triggerBtn)` — builds the full timeline (aarohi + avarohi for `'all'`, or just one section for `'asc'` / `'desc'`), renders it via `renderPaltaWav()`, encodes to a WAV blob, and plays through the `'palta'` `<audio>` element. Primes the element with a silent blob inside the click handler so iOS permits the swap-to-real-blob after the render.
+- `renderPaltaWav(sampleRate, timeline, ip, renderSec)` — runs `renderToBuffer()` with `renderPaltaTimelineOnContext()` as the render function, then encodes via `audioBufferToWavBlob()`.
+- `renderPaltaTimelineOnContext(ctx, dest, timeline, ip)` — schedules all notes of one timeline onto a context (live or offline). Shared between offline render (used now) and the code path that would live-schedule if we ever needed to fall back.
+- Repeat mode sets `audio.loop = true`; otherwise we listen for the `ended` event and call `finishPlayback()`.
+- Visual highlights are driven by `setTimeout` counted from the moment the WAV starts playing — they work for the first iteration in foreground; after that the screen is typically locked anyway.
 
 **Key functions:**
 - `doGenerate()` — Parses input, generates palta, renders, sets tempo to 102 BPM. Auto-corrects input text to reflect swara variants.
@@ -227,8 +234,9 @@ Synthesizes a tanpura drone using the Web Audio API with additive sine harmonics
 - `pluckTanpuraString(ctx, dest, freq, jawari, volume, startTime?)` — Creates one string pluck with all harmonics and jawari simulation. Accepts an explicit `startTime` so the function can also be used by the offline renderer.
 - `pluckTanpuraStringAt()` — Thin wrapper to emphasise the explicit-time usage from the offline loop renderer.
 - `getTanpuraStringFreqs()` — Computes string frequencies from tuning, key, and pitch register
-- `startTanpura()` — Renders one full string cycle into an `AudioBuffer` via `OfflineAudioContext`, then plays it with `AudioBufferSourceNode.loop = true`. The audio thread handles looping, so the drone keeps going when iOS backgrounds the tab. Falls back to live `setTimeout`-driven scheduling (`startTanpuraLive`) on older browsers without `OfflineAudioContext`.
-- `stopTanpura()` — Stops the loop source (or live timer), closes the AudioContext, and clears the Media Session if no palta is also running.
+- `startTanpura()` — Renders one full string cycle into an `AudioBuffer` via `OfflineAudioContext`, trims to exactly one cycle length, encodes to a WAV blob via `audioBufferToWavBlob()`, and plays through a hidden `<audio>` element with `loop = true`. Native media-element playback keeps the drone going at full speed when iOS backgrounds the tab or the phone locks — WebAudio alone gets throttled in background.
+- `trimBuffer(buffer, durationSec)` — returns a lightweight view over the first N seconds of an AudioBuffer. Used to clip the render so the loop wraps cleanly at the cycle boundary.
+- `stopTanpura()` — pauses the `<audio>` element, revokes the blob URL, closes the temporary AudioContext, and clears the Media Session if no palta is also running.
 
 #### 7. MIDI Keyboard
 Uses `navigator.requestMIDIAccess()` to connect to external keyboards. Each note-on creates synth oscillators wrapped in a per-note `masterGain` node. On note-off, the masterGain is faded to zero (simulating a damper). The Map `midiActiveNotes` tracks all sounding notes for cleanup.
