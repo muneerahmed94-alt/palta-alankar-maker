@@ -84,9 +84,11 @@
 
   LINE COUNT AUTO-CALCULATION:
   Preset patterns auto-calculate the number of ascending/descending lines so
-  the last line ends exactly at Sa'. Formula: lineCount = 8 - maxOffset, where
-  maxOffset is the highest interval in the pattern. Custom text input uses a
-  fixed 7 lines. The +/- buttons adjust from either starting point.
+  the LAST note of the last line lands exactly at Sa'. Formula:
+  lineCount = 8 - lastOffset, where lastOffset is the pattern's last note
+  relative to its first note (e.g. "Sa Re" → lastOffset=1 → 7 lines; "Sa Ga
+  Sa Re" → lastOffset=1 → 7 lines, ending N R' N S'). Custom text input uses
+  a fixed 7 lines. The +/- buttons adjust from either starting point.
 
   NEAREST-OCTAVE PARSING:
   When the user omits explicit octave markers (. or '), each swara after the
@@ -3464,12 +3466,20 @@
                 return;
             }
 
-            // Calculate line count: presets auto-calc to end at Sa', custom input uses 7
+            // Calculate line count: presets auto-calc so the LAST note of the
+            // last line lands exactly at Sa'. The last note of line `step` is
+            // `baseNote + step + lastOffset`; we want that to equal baseNote + 7,
+            // so step = 7 - lastOffset and lineCount = step + 1 = 8 - lastOffset.
+            // This works for monotonic ascending patterns (SR, SRG, SRGm, ...)
+            // AND for non-monotonic ones like "Sa Ga Sa Re" where the last note
+            // isn't the highest — an earlier version used maxOffset here and
+            // cut those patterns short.
             if (isPreset) {
                 const baseNote = parsed.notes[0];
-                const maxOffset = Math.max(...parsed.notes.map(n => n - baseNote));
-                ascLineCount = 8 - maxOffset;
-                descLineCount = 8 - maxOffset;
+                const lastOffset = parsed.notes[parsed.notes.length - 1] - baseNote;
+                // Guard: if the pattern already ends above Sa', don't go negative.
+                ascLineCount = Math.max(1, 8 - lastOffset);
+                descLineCount = Math.max(1, 8 - lastOffset);
             } else {
                 ascLineCount = 7;
                 descLineCount = 7;
