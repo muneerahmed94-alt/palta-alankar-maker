@@ -3639,7 +3639,7 @@
             }
 
             // Pre-schedule additional iterations until we're at least
-            // PALTA_PRESCHEDULE_HORIZON_SEC ahead of the current audio time.
+            // _paltaHorizonSec ahead of the current audio time.
             // Safe to call repeatedly — it only schedules what's missing.
             extendPaltaSchedule = function () {
                 if (!playbackState) return;
@@ -3655,26 +3655,21 @@
                     _lastIp = res.ip;
                 }
             };
+
+            // Initial playbackState. Must be set BEFORE scheduleIteration
+            // (the topup it arms checks playbackState) and before the
+            // _setHorizon assignment below.
+            playbackState = { audioCtx, timers, allOscillators };
+
             // Expose horizon flip so the global visibilitychange handler
             // (declared outside this closure) can switch modes.
             playbackState._setHorizon = function (mode) {
                 _paltaHorizonSec = (mode === 'bg') ? HORIZON_BG_SEC : HORIZON_FG_SEC;
             };
 
-            // Initial playbackState.
-            playbackState = { audioCtx, timers, allOscillators };
-
-            // Scheduling strategy: everything lives on the Web Audio
-            // timeline, which is driven by the audio thread and keeps
-            // playing whatever has already been scheduled even when the
-            // tab is backgrounded and JS timers throttle.
-            //
-            // We kick off the first iteration immediately (no render
-            // delay, no offline bake) and then, if Repeat is on, keep
-            // pre-scheduling additional iterations so the audio thread
-            // always has ~PALTA_PRESCHEDULE_HORIZON_SEC of work queued.
-            // When the tab comes back to foreground, extendPaltaSchedule()
-            // fires immediately (visibilitychange handler) to top up.
+            // Kick off the first iteration immediately (no render delay).
+            // The topup timer inside scheduleIteration keeps the audio-thread
+            // timeline filled to _paltaHorizonSec when Repeat is on.
             scheduleIteration(audioCtx.currentTime + 0.08);
 
             // Toggle the triggering button to a stop button
