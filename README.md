@@ -62,7 +62,7 @@ Three categories of preset patterns:
 - Octave markers work as prefix or suffix: `.N`, `N.`, `'S`, `S'` all valid
 - **Nearest-octave auto-resolution**: When no octave marker is given, each note after the first is placed in the octave nearest to the previous note (e.g., `SNSN` becomes `S .N S .N` — N below Sa, not 6 steps above)
 - Continuous strings support embedded octave markers: `S.NS.NSRGM` parses correctly
-- **Preset patterns** auto-calculate line count so the *last note* of the last line lands exactly at Sa'. Formula: `lineCount = 8 - lastOffset`, where `lastOffset` is the pattern's last note relative to its first note (e.g., SS = 8 lines, SR = 7, SRGm = 5, SRGmPD = 3; SGSR = 7, ending N R' N S')
+- **Preset patterns** auto-calculate line count so the melodic arc covers about one octave. Formula: `lineCount = 8 - lastOffset + max(0, -minOffset)`, where `lastOffset` is the pattern's last note relative to its first and `minOffset` is the lowest note relative to its first. Examples: SS = 8 lines, SR = 7, SRGm = 5, SRGmPD = 3; SGSR = 7, ending N R' N S'; S.NR.NRGmG = 7 (one extra line because the pattern dips to `.N`), ending N D S' D S' R' G' R'
 - **Custom text input** uses a fixed 7 lines
 - **Include Avarohi** checkbox in output card — live toggle to show/hide descending section
 - Add or remove lines with +/- buttons on the last line

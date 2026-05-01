@@ -84,11 +84,15 @@
 
   LINE COUNT AUTO-CALCULATION:
   Preset patterns auto-calculate the number of ascending/descending lines so
-  the LAST note of the last line lands exactly at Sa'. Formula:
-  lineCount = 8 - lastOffset, where lastOffset is the pattern's last note
-  relative to its first note (e.g. "Sa Re" → lastOffset=1 → 7 lines; "Sa Ga
-  Sa Re" → lastOffset=1 → 7 lines, ending N R' N S'). Custom text input uses
-  a fixed 7 lines. The +/- buttons adjust from either starting point.
+  the melodic arc covers about one octave. Formula:
+      lineCount = 8 - lastOffset + max(0, -minOffset)
+  where lastOffset is the pattern's last note relative to its first, and
+  minOffset is the lowest note relative to its first. The last-offset term
+  makes the last note of the last line land at Sa' for patterns that stay
+  at/above Sa (SR=7, SRGm=5, SGSR=7); the dip term adds extra lines for
+  patterns that visit notes below Sa (S.NR.NRGmG → dip=1, so 7 lines instead
+  of 6). Custom text input uses a fixed 7 lines. The +/- buttons adjust
+  from either starting point.
 
   NEAREST-OCTAVE PARSING:
   When the user omits explicit octave markers (. or '), each swara after the
@@ -3466,20 +3470,33 @@
                 return;
             }
 
-            // Calculate line count: presets auto-calc so the LAST note of the
-            // last line lands exactly at Sa'. The last note of line `step` is
-            // `baseNote + step + lastOffset`; we want that to equal baseNote + 7,
-            // so step = 7 - lastOffset and lineCount = step + 1 = 8 - lastOffset.
-            // This works for monotonic ascending patterns (SR, SRG, SRGm, ...)
-            // AND for non-monotonic ones like "Sa Ga Sa Re" where the last note
-            // isn't the highest — an earlier version used maxOffset here and
-            // cut those patterns short.
+            // Calculate line count for presets. Goal: the palta should cover
+            // roughly one octave of transposition, ending with the LAST note
+            // around Sa' or just above. Two factors:
+            //
+            //   • lastOffset — how many scale-steps above the first note does
+            //     the pattern end? If the last note of line `step` is
+            //     `baseNote + step + lastOffset`, we want step + lastOffset = 7,
+            //     so lineCount = 8 - lastOffset.
+            //
+            //   • dip below Sa — if the pattern visits notes below the first
+            //     (e.g. "Sa .Ni Re .Ni ..." with offset -1), the first line
+            //     already dips into the lower octave. We need extra lines so
+            //     the overall melodic arc still reaches the upper register
+            //     properly. Add max(0, -minOffset) extra lines.
+            //
+            // This matches existing monotonic patterns (SR=7, SRG=6, SRGm=5)
+            // and non-monotonic ones that stay at/above Sa (SGSR=7, SRGRS=8),
+            // while extending patterns like S.NR.NRGmG from 6 to 7 lines so
+            // the last line reaches the expected upper range.
             if (isPreset) {
                 const baseNote = parsed.notes[0];
-                const lastOffset = parsed.notes[parsed.notes.length - 1] - baseNote;
-                // Guard: if the pattern already ends above Sa', don't go negative.
-                ascLineCount = Math.max(1, 8 - lastOffset);
-                descLineCount = Math.max(1, 8 - lastOffset);
+                const offsets = parsed.notes.map(n => n - baseNote);
+                const lastOffset = offsets[offsets.length - 1];
+                const minOffset = Math.min(...offsets);
+                const dip = Math.max(0, -minOffset);
+                ascLineCount = Math.max(1, 8 - lastOffset + dip);
+                descLineCount = Math.max(1, 8 - lastOffset + dip);
             } else {
                 ascLineCount = 7;
                 descLineCount = 7;
