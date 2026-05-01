@@ -3571,18 +3571,15 @@
             const tailSec = ip.instrument === 'harmonium' ? 2.4 : 0.8;
             const renderSec = iterationSec + tailSec;
 
-            // Create a short-lived AudioContext just to get the sample rate
-            // (and to register for visibilitychange auto-resume as a
-            // belt-and-braces measure).
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            trackAudioContext(audioCtx);
-            const sampleRate = audioCtx.sampleRate;
+            // Sample rate for the render. We use 44.1 kHz: universally
+            // supported by <audio>, matches the silent-primer WAV, and
+            // keeps blob size reasonable (mobile file I/O is a hot path).
+            const sampleRate = 44100;
 
             // ---- Set up playbackState early so stopPlayback works even
             // ---- if the user cancels during the render.
             const timers = [];
             playbackState = {
-                audioCtx,        // just for resume/close hygiene
                 timers,
                 mediaName: 'palta',
             };
@@ -3611,20 +3608,26 @@
                 },
             });
 
-            // ---- Kick off the offline render.
-            renderPaltaWav(sampleRate, tl, ip, renderSec).then((blob) => {
-                if (!playbackState || playbackState.mediaName !== 'palta') {
-                    // User stopped playback while we were rendering.
-                    return;
-                }
-                const repeatCb = document.getElementById(repeatId);
-                const repeatOn = !!(repeatCb && repeatCb.checked);
+            // ---- Kick off the offline render. We render (iteration + tail)
+            // ---- and then either fold the tail back onto the start for a
+            // ---- seamless loop, or keep the tail intact for single-shot.
+            const repeatCbEarly = document.getElementById(repeatId);
+            const repeatOn = !!(repeatCbEarly && repeatCbEarly.checked);
+
+            renderPaltaBuffer(sampleRate, tl, ip, renderSec).then((buffer) => {
+                if (!playbackState || playbackState.mediaName !== 'palta') return;
+
+                const shaped = repeatOn
+                    ? buildSeamlessLoopBuffer(buffer, iterationSec)
+                    : trimBuffer(buffer, iterationSec + tailSec);
+
+                const blob = audioBufferToWavBlob(shaped);
+
                 const entry = _mediaPlayers.get('palta');
                 if (!entry) return;
                 entry.el.loop = repeatOn;
                 loadAndPlayBlob('palta', blob).then(() => {
                     if (!repeatOn) {
-                        // Single-shot: wait for ended + tail, then finish.
                         const cleanup = () => {
                             entry.el.removeEventListener('ended', cleanup);
                             finishPlayback();
@@ -3633,10 +3636,6 @@
                     }
                 }).catch(() => {});
 
-                // Kick off visual highlights on a setTimeout schedule from
-                // now. Since the element is a native media player the
-                // currentTime is accurate, so we could sync tighter — but
-                // a simple time-from-now schedule is fine for foreground.
                 scheduleHighlights(tl, onsetInterval);
             }).catch((err) => {
                 console && console.error && console.error('Palta render failed:', err);
@@ -3657,16 +3656,23 @@
             }
         }
 
-        // Build the rendering function once (closure-free) so it's easy to
-        // read and to reuse from the offline render path.
-        async function renderPaltaWav(sampleRate, timeline, ip, renderSec) {
-            const buffer = await renderToBuffer(sampleRate, renderSec, 2, (offCtx, offDest) => {
-                const master = offCtx.createGain();
-                master.gain.value = 1;
-                master.connect(offDest);
-                renderPaltaTimelineOnContext(offCtx, master, timeline, ip);
+        // Render one full palta iteration (plus tail) offline. Returns the
+        // raw AudioBuffer so the caller can shape it for seamless looping
+        // or keep the full tail for single-shot playback, then encode to
+        // WAV. Mono output — half the blob size, and palta is already
+        // mono musically (one instrument, no stereo imaging).
+        async function renderPaltaBuffer(sampleRate, timeline, ip, renderSec) {
+            return await renderToBuffer(sampleRate, renderSec, 1, (offCtx, offDest) => {
+                // Same compressor profile the live scheduler used — keeps
+                // peaks in check when multiple harmonium notes/reverb tails
+                // overlap in a loop.
+                const compressor = offCtx.createDynamicsCompressor();
+                compressor.threshold.value = -20;
+                compressor.knee.value = 20;
+                compressor.ratio.value = 4;
+                compressor.connect(offDest);
+                renderPaltaTimelineOnContext(offCtx, compressor, timeline, ip);
             });
-            return audioBufferToWavBlob(buffer);
         }
 
         function renderPaltaTimelineOnContext(ctx, dest, timeline, ip) {
@@ -3723,9 +3729,6 @@
             if (playbackState.mediaName) {
                 stopMediaPlayer(playbackState.mediaName);
             }
-            if (playbackState.audioCtx) {
-                try { playbackState.audioCtx.close(); } catch (e) {}
-            }
             playbackState = null;
 
             // Release the Media Session unless the tanpura is still running.
@@ -3743,9 +3746,6 @@
             }
             if (playbackState.mediaName) {
                 stopMediaPlayer(playbackState.mediaName);
-            }
-            if (playbackState.audioCtx) {
-                try { playbackState.audioCtx.close(); } catch (e) {}
             }
 
             // Release the Media Session unless the tanpura is still running.
@@ -4114,12 +4114,7 @@
         async function startTanpura() {
             if (tanpuraState && tanpuraState.isPlaying) return;
 
-            // We need a temporary AudioContext just to get the sample rate
-            // (and to register for visibility auto-resume). The real audio
-            // comes out of an <audio> element.
-            const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            trackAudioContext(audioCtx);
-            const sampleRate = audioCtx.sampleRate;
+            const sampleRate = 44100;
 
             setMediaSessionMetadata('Tanpura Drone', 'Palta Alankar Maker');
             setMediaSessionHandlers({
@@ -4132,7 +4127,7 @@
 
             // Placeholder state so repeat-clicks while rendering don't start a
             // second session.
-            tanpuraState = { audioCtx, isPlaying: true, mediaName: 'tanpura' };
+            tanpuraState = { isPlaying: true, mediaName: 'tanpura' };
 
             // Prime the <audio> element INSIDE the user gesture so iOS
             // allows the subsequent play() after the render completes.
@@ -4145,26 +4140,43 @@
             const stringCount = freqs.length;
             const cycleDuration = stringCount * interval;
 
-            // Render slightly longer than one cycle so the tails of the
-            // last string bleed over the loop point. The <audio> element
-            // still loops the whole blob, and because the first plucks
-            // came AFTER t=0 the looped tail blends with the next cycle's
-            // attacks. We chose to render exactly one cycle length: the
-            // native <audio> loop wraps at that point cleanly.
-            const renderDuration = cycleDuration;
+            // Each tanpura pluck decays for ~7s, longer than one cycle.
+            // To get a seamless loop we need a "steady-state" snapshot:
+            // render several cycles of plucks, then extract ONE cycle
+            // from the middle where previous plucks' decays are already
+            // overlapping at steady-state amplitude. Looping that middle
+            // cycle sounds continuous because the decays going off the
+            // end of the cycle equal the decays already present at the
+            // start.
+            //
+            // We render N_CYCLES ahead of the snapshot (warm-up), snap
+            // ONE cycle, and fold the next cycle's worth of decay back
+            // onto it so the wrap point is smooth.
+            const loopSec = cycleDuration;
+            const WARMUP_CYCLES = 3;
+            const TOTAL_CYCLES = WARMUP_CYCLES + 2;   // +1 we snap, +1 of tail to fold
+            const renderSec = TOTAL_CYCLES * cycleDuration;
+            const snapStart = WARMUP_CYCLES * cycleDuration;
 
             let blob;
             try {
-                const buffer = await renderToBuffer(sampleRate, renderDuration + 3.0, 1, (offCtx, offDest) => {
+                const fullBuffer = await renderToBuffer(sampleRate, renderSec, 1, (offCtx, offDest) => {
                     const offGain = offCtx.createGain();
                     offGain.gain.value = 1;
                     offGain.connect(offDest);
-                    for (let i = 0; i < stringCount; i++) {
-                        pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0, i * interval);
+                    for (let cycle = 0; cycle < TOTAL_CYCLES; cycle++) {
+                        const cycleStart = cycle * cycleDuration;
+                        for (let i = 0; i < stringCount; i++) {
+                            pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0,
+                                                  cycleStart + i * interval);
+                        }
                     }
                 });
-                // Trim to cycleDuration so the loop wraps exactly at one cycle.
-                blob = audioBufferToWavBlob(trimBuffer(buffer, renderDuration));
+                // Slice out the snapshot window — one cycle plus the
+                // following cycle for tail-folding. sliceBuffer() returns
+                // a view that audioBufferToWavBlob can consume.
+                const snapshot = sliceBuffer(fullBuffer, snapStart, cycleDuration * 2);
+                blob = audioBufferToWavBlob(buildSeamlessLoopBuffer(snapshot, loopSec));
             } catch (e) {
                 tanpuraState = null;
                 document.getElementById('tanpura-toggle').textContent = 'Start';
@@ -4187,9 +4199,74 @@
             document.getElementById('tanpura-toggle').classList.add('playing');
         }
 
-        // Return an AudioBuffer-like wrapper that views only the first
-        // `durationSec` of `buffer`. Used to encode just the cycle portion
-        // of the tanpura render (its decay tail bleeds into the next loop).
+        // Make a seamless loop from an over-rendered AudioBuffer.
+        //
+        // We render (loopSec + tailSec). The last tailSec of audio is the
+        // decay tails of notes that started near the end of the loop —
+        // reverb, harmonium release, tanpura jawari bloom. If we simply
+        // trimmed to loopSec and looped that, the tails would cut off
+        // abruptly at the wrap point and you'd hear a click / pause.
+        //
+        // Instead we FOLD the overflow back: add the [loopSec, loopSec+tail]
+        // samples on top of the [0, tail] samples. When the native <audio>
+        // element loops the file (which is exactly loopSec long), the last
+        // note's tail is already mixed into the start of the loop, so the
+        // wraparound is seamless.
+        //
+        // This is the standard "wrap tail" technique used for looped sampled
+        // instruments.
+        function buildSeamlessLoopBuffer(buffer, loopSec) {
+            const sr = buffer.sampleRate;
+            const loopLen = Math.min(buffer.length, Math.round(loopSec * sr));
+            const tailLen = Math.max(0, buffer.length - loopLen);
+
+            const channels = [];
+            for (let c = 0; c < buffer.numberOfChannels; c++) {
+                // Copy the first loopLen samples.
+                const src = buffer.getChannelData(c);
+                const out = new Float32Array(loopLen);
+                out.set(src.subarray(0, loopLen));
+                // Fold the tail back onto the start.
+                for (let i = 0; i < tailLen; i++) {
+                    out[i] += src[loopLen + i];
+                }
+                channels.push(out);
+            }
+            // Minimal shape audioBufferToWavBlob needs.
+            return {
+                numberOfChannels: buffer.numberOfChannels,
+                sampleRate: sr,
+                length: loopLen,
+                getChannelData: (i) => channels[i],
+            };
+        }
+
+        // Return a view over [startSec, startSec + durationSec] of an
+        // AudioBuffer. Used to extract a steady-state snapshot for the
+        // tanpura loop. Returned object has the minimal shape that
+        // buildSeamlessLoopBuffer / audioBufferToWavBlob need.
+        function sliceBuffer(buffer, startSec, durationSec) {
+            const sr = buffer.sampleRate;
+            const startSample = Math.max(0, Math.floor(startSec * sr));
+            const lenSamples = Math.min(
+                buffer.length - startSample,
+                Math.ceil(durationSec * sr)
+            );
+            const channels = [];
+            for (let c = 0; c < buffer.numberOfChannels; c++) {
+                channels.push(buffer.getChannelData(c).subarray(startSample, startSample + lenSamples));
+            }
+            return {
+                numberOfChannels: buffer.numberOfChannels,
+                sampleRate: sr,
+                length: lenSamples,
+                getChannelData: (i) => channels[i],
+            };
+        }
+
+        // Trim an AudioBuffer view to exactly `durationSec` of its first
+        // samples. Used for non-looped single-shot playback where we want
+        // to include the full tail.
         function trimBuffer(buffer, durationSec) {
             const sr = buffer.sampleRate;
             const newLen = Math.min(buffer.length, Math.ceil(durationSec * sr));
@@ -4197,8 +4274,6 @@
             for (let c = 0; c < buffer.numberOfChannels; c++) {
                 channels.push(buffer.getChannelData(c).subarray(0, newLen));
             }
-            // Minimal shape audioBufferToWavBlob needs:
-            //   numberOfChannels, sampleRate, length, getChannelData(i)
             return {
                 numberOfChannels: buffer.numberOfChannels,
                 sampleRate: sr,
@@ -4211,9 +4286,6 @@
             if (!tanpuraState) return;
             tanpuraState.isPlaying = false;
             if (tanpuraState.mediaName) stopMediaPlayer(tanpuraState.mediaName);
-            if (tanpuraState.audioCtx) {
-                try { tanpuraState.audioCtx.close(); } catch (e) {}
-            }
             tanpuraState = null;
 
             // Only clear the Media Session if palta isn't also playing.
