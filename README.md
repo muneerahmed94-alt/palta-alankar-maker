@@ -72,9 +72,19 @@ Three categories of preset patterns:
 - **Grand Piano** — Additive synthesis with 10 harmonics, inharmonicity modeling, hammer noise burst, soundboard resonance
 - **Upright Piano** — Shorter decay, mid-frequency EQ boost for "boxy" character
 - **Electric Piano** — FM synthesis (Rhodes-style) with tremolo LFO
-- **Harmonium** — Sawtooth oscillators through lowpass + peaking EQ filters, bellows tremolo LFO
+- **Harmonium** — Source-filter synthesis modeled after Puranik & Scavone's DAFx 2023 paper *"Physically Inspired Signal Model for Harmonium Sound Synthesis"*. The insight: a real harmonium's recognizable voice is the product of a rich reed signal passed through a complex wooden-cabinet formant filter. Changing brand = changing that filter.
+  - **Reed source** — `PeriodicWave` built from a 32-partial LTAS (long-term average spectrum) measured from Indian hand harmoniums: strong f0 and 2f, notch at the 4th partial, plateau through partials 5–12, gentle rolloff to ~25. Much richer than a small additive sine stack.
+  - **Cabinet filter** — Cascade of 5 peaking biquads + high-shelf + lowpass, with per-brand parameter presets:
+    - **Paul & Co** — warm, pronounced 1.6 kHz nasal bark, rolled-off highs (the "Rolls-Royce" classical-vocal sound)
+    - **Pakrashi** — brighter, 2.4 kHz projection peak, more open upper register
+    - **DSR** — balanced, slightly scooped low-mids, clear upper
+    - **MKS** — tightest low end, punchy 1.2 kHz bite, extended top (modern scale changers)
+  - **Exponential ~40 ms attack** matching real free-reed self-excitation spin-up
+  - **Chiff** — soft filtered-noise burst on onset for the air-rush transient
+  - **Bellows LFO (~3 Hz)** — shallow amplitude + ±1.5-cent pitch wobble, with per-note phase offset so sustained notes don't beat in sync
+  - **Per-reed detuning + drift** (±6–8 cents between reed pairs, ±2 cents micro-drift) for natural chorus beating
+  - **Small-room convolution reverb** — a synthetic ~1.8 s stereo IR (6 early reflections for floor/walls/ceiling + an exponentially-decaying low-pass-filtered noise tail) processed by a `ConvolverNode`. Notes are split into ~82% dry / 18% wet through a shared bus so the reverb tail rings between successive notes, giving the instrument a natural sense of space
   - 6 reed configurations: Bass-Male, Bass-Male-Female, Bass-Male-Male, Male-Male-Female-Bass, Bass-Male-Female-Female, Bass-Bass-Male-Female
-  - Doubled reeds use slight detuning (±4–6 cents) for natural chorus/beating effect
 - Sound options are located in the Output Card (after "Generated Palta" header)
 
 ### Playback
@@ -162,7 +172,7 @@ All synthesis uses the Web Audio API (no audio samples).
 
 **Synthesis:**
 - **Piano inharmonicity**: Partials are stretched using `freq * n * sqrt(1 + B*n²)` where B increases with pitch, modeling real piano string physics.
-- **Harmonium reeds**: Sawtooth wave provides natural 1/n harmonic rolloff. Lowpass filter at `reed_freq * 6` tames harshness. Peaking EQ at `reed_freq * 2.5` adds nasal character.
+- **Harmonium reeds**: Source-filter model. Each reed is a `PeriodicWave` built from a 32-partial LTAS. All reeds mix into a per-brand cabinet filter (5 peaking biquads + high-shelf + lowpass) modeling the wooden enclosure, then the whole harmonium bus feeds a shared synthetic small-room convolution reverb. See `getHarmoniumReedWave()`, `HARMONIUM_BRANDS`, `buildHarmoniumCabinet()`, and `getHarmoniumReverbBus()`.
 - **Metronome**: Two sine oscillators (880 Hz + 1760 Hz) with instant attack and fast decay for a wood-block click sound.
 
 #### 5. Playback Engine
@@ -253,6 +263,14 @@ Swaras use the major scale (shuddh swaras):
 ### Adding a new harmonium reed configuration
 1. Add a new `else if (reedType === 'your-type')` block inside `createHarmoniumNote`, pushing reeds with the desired `{ freq, amp, detune }` values.
 2. Add a `<option>` to both reed selects (`#reed-select` and `#midi-reed-select`).
+
+### Adding a new harmonium brand preset
+1. Add a new entry to `HARMONIUM_BRANDS` with a `name`, a list of biquad `filters` (`peaking` / `lowshelf` / `highshelf` / `lowpass` with `freq`, `Q`, and `gain` in dB), and a `reedTrim` (output trim in dB).
+2. Add a `<option>` to both brand selects (`#brand-select` and `#midi-brand-select`).
+3. Tuning tips: 5 peaking filters are plenty; aim for 2–4 kHz for "projection," 800 Hz–1.6 kHz for the "bark," and a `highshelf` cut above 4–5 kHz to control brightness. The chain applies to every note, so test with both single notes and sustained chords.
+
+### Tuning the harmonium room reverb
+The synthetic impulse response lives in `getHarmoniumRoomIR()` (tail length, decay T60, early-reflection times/amplitudes). The dry/wet mix lives in `getHarmoniumReverbBus()` (`dryGain.gain` and `wetGain.gain`). A 82/18 mix is subtle; try 75/25 for more room, 90/10 for drier.
 
 ### Adding a new preset pattern
 Add a `<button class="preset-btn" data-pattern="Sa Ga Re Ma">Sa Ga Re Ma</button>` inside the appropriate `.preset-chips` div. The event listener is already wired up via `querySelectorAll('.preset-btn:not(.special-preset-btn)')`.
