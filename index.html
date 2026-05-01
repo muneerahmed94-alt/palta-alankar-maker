@@ -3647,36 +3647,65 @@
                 finishPlayback();
             });
 
-            // Drive the visual highlight from audio.currentTime instead of
-            // wall-clock setTimeouts. This stays in sync across loop
-            // iterations and handles any drift caused by the render delay
-            // or by iOS throttling the <audio> element.
+            // Drive the visual highlight from a wall-clock timer anchored
+            // to when audio ACTUALLY started playing.
             //
-            //   - audio.currentTime is 0..iterationSec within each loop
-            //     (the native player resets it to 0 on wrap).
-            //   - idx = floor(currentTime / onsetInterval) gives the
-            //     currently-playing event in `tl`.
-            //   - requestAnimationFrame runs ~60 Hz in foreground and is
-            //     throttled (but not needed) in background. When the user
-            //     returns to the foreground, the next rAF tick re-syncs.
+            // Why not audio.currentTime? On iOS Safari, currentTime reports
+            // the decoder position, which can run several seconds ahead of
+            // what the speakers are actually outputting for large WAV
+            // files — making the highlight visibly early.
+            //
+            // Instead we capture performance.now() on the 'playing' event
+            // (which fires when the media is genuinely producing sound,
+            // after the buffer-in latency) and compute the note index from
+            // elapsed wall-clock time modulo the iteration length. Tiny
+            // clock drift over a long session is imperceptible; being
+            // seconds ahead is not.
             function startHighlightLoop(audioEl, timeline, onsetInterval, iterationSec) {
                 let lastIdx = -1;
                 let rafId = null;
+                let playStartMs = null;
+
+                function onPlaying() {
+                    // First time audio is actually outputting. performance.now()
+                    // is the wall-clock timestamp we'll count from.
+                    if (playStartMs === null) {
+                        playStartMs = performance.now();
+                    }
+                }
+                audioEl.addEventListener('playing', onPlaying);
+                // If audio is already playing (rare — play() usually fires
+                // 'playing' asynchronously), capture immediately.
+                if (!audioEl.paused && audioEl.readyState >= 3) {
+                    playStartMs = performance.now();
+                }
 
                 function tick() {
-                    if (!playbackState) return; // stopped
-                    if (audioEl.paused) {
-                        // Keep the raf alive so we pick back up when play()
-                        // fires (e.g. from Media Session pause/resume).
+                    if (!playbackState) {
+                        audioEl.removeEventListener('playing', onPlaying);
+                        return;
+                    }
+                    // Not started yet — wait for the 'playing' event.
+                    if (playStartMs === null) {
                         rafId = requestAnimationFrame(tick);
                         playbackState.highlightRaf = rafId;
                         return;
                     }
-                    const t = audioEl.currentTime;
-                    // Only emit highlights for the first iteration's
-                    // worth of time on each loop wrap. After that the
-                    // user is most likely in background anyway.
-                    const timeInIter = t % (iterationSec || audioEl.duration || 1);
+                    // If the user paused (e.g. lock-screen pause), freeze
+                    // the highlight and hold wall-clock time relative to
+                    // the element's currentTime when we resume.
+                    if (audioEl.paused) {
+                        // Re-anchor on next 'playing' so the pause doesn't
+                        // skew our wall clock.
+                        playStartMs = null;
+                        audioEl.addEventListener('playing', onPlaying, { once: true });
+                        rafId = requestAnimationFrame(tick);
+                        playbackState.highlightRaf = rafId;
+                        return;
+                    }
+
+                    const elapsed = (performance.now() - playStartMs) / 1000;
+                    const timeInIter = elapsed % iterationSec;
                     const idx = Math.floor(timeInIter / onsetInterval);
                     if (idx !== lastIdx) {
                         lastIdx = idx;
@@ -3690,7 +3719,6 @@
                     playbackState.highlightRaf = rafId;
                 }
 
-                // Cancel any prior loop before starting a new one.
                 if (playbackState && playbackState.highlightRaf) {
                     cancelAnimationFrame(playbackState.highlightRaf);
                 }
