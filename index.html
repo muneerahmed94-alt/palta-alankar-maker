@@ -3634,25 +3634,68 @@
                         };
                         entry.el.addEventListener('ended', cleanup);
                     }
-                }).catch(() => {});
-
-                scheduleHighlights(tl, onsetInterval);
+                    // Start the currentTime-driven highlight loop AFTER
+                    // play() resolves so the first tick happens once audio
+                    // is actually running.
+                    startHighlightLoop(entry.el, tl, onsetInterval, iterationSec);
+                }).catch(() => {
+                    // Still start the loop — the element will catch up.
+                    startHighlightLoop(entry.el, tl, onsetInterval, iterationSec);
+                });
             }).catch((err) => {
                 console && console.error && console.error('Palta render failed:', err);
                 finishPlayback();
             });
 
-            function scheduleHighlights(tl, onsetInterval) {
-                // Clear any prior
-                const start = performance.now();
-                for (let i = 0; i < tl.length; i++) {
-                    const t = setTimeout(() => highlightNote(tl[i]),
-                                        i * onsetInterval * 1000);
-                    timers.push(t);
+            // Drive the visual highlight from audio.currentTime instead of
+            // wall-clock setTimeouts. This stays in sync across loop
+            // iterations and handles any drift caused by the render delay
+            // or by iOS throttling the <audio> element.
+            //
+            //   - audio.currentTime is 0..iterationSec within each loop
+            //     (the native player resets it to 0 on wrap).
+            //   - idx = floor(currentTime / onsetInterval) gives the
+            //     currently-playing event in `tl`.
+            //   - requestAnimationFrame runs ~60 Hz in foreground and is
+            //     throttled (but not needed) in background. When the user
+            //     returns to the foreground, the next rAF tick re-syncs.
+            function startHighlightLoop(audioEl, timeline, onsetInterval, iterationSec) {
+                let lastIdx = -1;
+                let rafId = null;
+
+                function tick() {
+                    if (!playbackState) return; // stopped
+                    if (audioEl.paused) {
+                        // Keep the raf alive so we pick back up when play()
+                        // fires (e.g. from Media Session pause/resume).
+                        rafId = requestAnimationFrame(tick);
+                        playbackState.highlightRaf = rafId;
+                        return;
+                    }
+                    const t = audioEl.currentTime;
+                    // Only emit highlights for the first iteration's
+                    // worth of time on each loop wrap. After that the
+                    // user is most likely in background anyway.
+                    const timeInIter = t % (iterationSec || audioEl.duration || 1);
+                    const idx = Math.floor(timeInIter / onsetInterval);
+                    if (idx !== lastIdx) {
+                        lastIdx = idx;
+                        if (idx >= 0 && idx < timeline.length) {
+                            highlightNote(timeline[idx]);
+                        } else {
+                            highlightNote(null);
+                        }
+                    }
+                    rafId = requestAnimationFrame(tick);
+                    playbackState.highlightRaf = rafId;
                 }
-                const clearT = setTimeout(() => highlightNote(null),
-                                          tl.length * onsetInterval * 1000);
-                timers.push(clearT);
+
+                // Cancel any prior loop before starting a new one.
+                if (playbackState && playbackState.highlightRaf) {
+                    cancelAnimationFrame(playbackState.highlightRaf);
+                }
+                rafId = requestAnimationFrame(tick);
+                if (playbackState) playbackState.highlightRaf = rafId;
             }
         }
 
@@ -3726,6 +3769,9 @@
             if (playbackState.timers) {
                 for (const t of playbackState.timers) clearTimeout(t);
             }
+            if (playbackState.highlightRaf) {
+                cancelAnimationFrame(playbackState.highlightRaf);
+            }
             if (playbackState.mediaName) {
                 stopMediaPlayer(playbackState.mediaName);
             }
@@ -3743,6 +3789,9 @@
 
             if (playbackState.timers) {
                 for (const t of playbackState.timers) clearTimeout(t);
+            }
+            if (playbackState.highlightRaf) {
+                cancelAnimationFrame(playbackState.highlightRaf);
             }
             if (playbackState.mediaName) {
                 stopMediaPlayer(playbackState.mediaName);
