@@ -2388,7 +2388,9 @@
             const oldUrl = entry.blobUrl;
             entry.blobUrl = newUrl;
             entry.el.src = newUrl;
-            entry.el.currentTime = 0;
+            // Don't touch currentTime here — on iOS the new src hasn't
+            // parsed its duration yet and setting currentTime can throw.
+            // The element auto-starts from 0 on a fresh src anyway.
             try {
                 const p = entry.el.play();
                 if (p && p.then) await p;
@@ -4217,43 +4219,33 @@
             const stringCount = freqs.length;
             const cycleDuration = stringCount * interval;
 
-            // Each tanpura pluck decays for ~7s, longer than one cycle.
-            // To get a seamless loop we need a "steady-state" snapshot:
-            // render several cycles of plucks, then extract ONE cycle
-            // from the middle where previous plucks' decays are already
-            // overlapping at steady-state amplitude. Looping that middle
-            // cycle sounds continuous because the decays going off the
-            // end of the cycle equal the decays already present at the
-            // start.
-            //
-            // We render N_CYCLES ahead of the snapshot (warm-up), snap
-            // ONE cycle, and fold the next cycle's worth of decay back
-            // onto it so the wrap point is smooth.
+            // Render ONE cycle of plucks followed by a long decay tail.
+            // Each pluck decays over ~7 s, so we give the tail plenty of
+            // time (~12 s) to fully fade. buildSeamlessLoopBuffer will
+            // then fold the entire tail back onto the cycle, wrapping
+            // modulo cycleDuration. That modulo wrap stacks multiple
+            // "iterations worth" of decay onto the cycle — which matches
+            // what real steady-state playback produces — without the
+            // double-attack artefact that warm-up cycles would cause.
             const loopSec = cycleDuration;
-            const WARMUP_CYCLES = 3;
-            const TOTAL_CYCLES = WARMUP_CYCLES + 2;   // +1 we snap, +1 of tail to fold
-            const renderSec = TOTAL_CYCLES * cycleDuration;
-            const snapStart = WARMUP_CYCLES * cycleDuration;
+            const TAIL_SEC = 12;
+            const renderSec = cycleDuration + TAIL_SEC;
 
             let blob;
             try {
                 const fullBuffer = await renderToBuffer(sampleRate, renderSec, 1, (offCtx, offDest) => {
                     const offGain = offCtx.createGain();
+                    // The real tanpura's plucks sit fairly low in the mix
+                    // (the drone builds through decay overlap). Rendering
+                    // at 1.0 and letting the steady-state overlap build
+                    // the loudness keeps peaks in check.
                     offGain.gain.value = 1;
                     offGain.connect(offDest);
-                    for (let cycle = 0; cycle < TOTAL_CYCLES; cycle++) {
-                        const cycleStart = cycle * cycleDuration;
-                        for (let i = 0; i < stringCount; i++) {
-                            pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0,
-                                                  cycleStart + i * interval);
-                        }
+                    for (let i = 0; i < stringCount; i++) {
+                        pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0, i * interval);
                     }
                 });
-                // Slice out the snapshot window — one cycle plus the
-                // following cycle for tail-folding. sliceBuffer() returns
-                // a view that audioBufferToWavBlob can consume.
-                const snapshot = sliceBuffer(fullBuffer, snapStart, cycleDuration * 2);
-                blob = audioBufferToWavBlob(buildSeamlessLoopBuffer(snapshot, loopSec));
+                blob = audioBufferToWavBlob(buildSeamlessLoopBuffer(fullBuffer, loopSec));
             } catch (e) {
                 tanpuraState = null;
                 document.getElementById('tanpura-toggle').textContent = 'Start';
@@ -4279,37 +4271,57 @@
         // Make a seamless loop from an over-rendered AudioBuffer.
         //
         // We render (loopSec + tailSec). The last tailSec of audio is the
-        // decay tails of notes that started near the end of the loop —
-        // reverb, harmonium release, tanpura jawari bloom. If we simply
-        // trimmed to loopSec and looped that, the tails would cut off
-        // abruptly at the wrap point and you'd hear a click / pause.
+        // decay tails of notes that started inside the loop — reverb,
+        // harmonium release, tanpura jawari bloom. If we simply trimmed
+        // to loopSec and looped that, the tails would cut off abruptly
+        // at the wrap point and you'd hear a click / pause.
         //
-        // Instead we FOLD the overflow back: add the [loopSec, loopSec+tail]
-        // samples on top of the [0, tail] samples. When the native <audio>
-        // element loops the file (which is exactly loopSec long), the last
-        // note's tail is already mixed into the start of the loop, so the
-        // wraparound is seamless.
+        // So we FOLD the overflow back onto the start. Critically, if
+        // tailSec > loopSec (as with tanpura: ~8 s decay on a ~4 s cycle),
+        // we wrap MODULO loopLen so the fold represents multiple
+        // iterations of decay stacking — which is exactly what happens
+        // in reality when the loop plays repeatedly.
         //
-        // This is the standard "wrap tail" technique used for looped sampled
-        // instruments.
+        // When the native <audio> element loops the file, the last note's
+        // decay tail (plus older iterations' decays via the modulo wrap)
+        // is already mixed into the start of the loop, so the wraparound
+        // is seamless AND the steady-state overlap sounds natural.
         function buildSeamlessLoopBuffer(buffer, loopSec) {
             const sr = buffer.sampleRate;
             const loopLen = Math.min(buffer.length, Math.round(loopSec * sr));
             const tailLen = Math.max(0, buffer.length - loopLen);
 
             const channels = [];
+            let peak = 0;
             for (let c = 0; c < buffer.numberOfChannels; c++) {
-                // Copy the first loopLen samples.
                 const src = buffer.getChannelData(c);
                 const out = new Float32Array(loopLen);
                 out.set(src.subarray(0, loopLen));
-                // Fold the tail back onto the start.
+                // Fold the tail back onto the start, wrapping modulo
+                // loopLen so long tails (multi-cycle decays) accumulate
+                // correctly — mirrors what real steady-state playback
+                // produces when previous iterations' decays overlap the
+                // current cycle's attacks.
                 for (let i = 0; i < tailLen; i++) {
-                    out[i] += src[loopLen + i];
+                    out[i % loopLen] += src[loopLen + i];
+                }
+                // Track absolute peak so we can normalise below.
+                for (let i = 0; i < loopLen; i++) {
+                    const a = Math.abs(out[i]);
+                    if (a > peak) peak = a;
                 }
                 channels.push(out);
             }
-            // Minimal shape audioBufferToWavBlob needs.
+            // If the fold pushed peaks above unity (easy for tanpura with
+            // its multi-cycle decay stacking), normalise down to 0.95 so
+            // the WAV encoder's hard-clip doesn't distort.
+            if (peak > 0.95) {
+                const scale = 0.95 / peak;
+                for (let c = 0; c < channels.length; c++) {
+                    const buf = channels[c];
+                    for (let i = 0; i < buf.length; i++) buf[i] *= scale;
+                }
+            }
             return {
                 numberOfChannels: buffer.numberOfChannels,
                 sampleRate: sr,
