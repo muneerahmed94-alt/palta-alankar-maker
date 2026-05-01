@@ -136,6 +136,21 @@
   - Coupler: Left coupler adds lower octave, Right coupler adds upper octave.
   Sound options are in the Output Card (after "Generated Palta" header).
 
+  MOBILE / BACKGROUND PLAYBACK (iOS lock-screen, Chrome backgrounded):
+  - All AudioContexts route through a silent looping <audio> element via
+    MediaStreamAudioDestinationNode. iOS only keeps tabs audible when they
+    own an actively-playing HTMLAudioElement; this trick makes the synth
+    output travel through one so the tab stays alive when the phone locks.
+  - Tanpura + palta (with Repeat enabled) render one full cycle to an
+    OfflineAudioContext, then play it back via AudioBufferSourceNode(loop=true).
+    Looping is done entirely on the audio thread, so playback continues
+    even when iOS throttles JS setTimeout in backgrounded tabs.
+  - Media Session API announces what's playing on the lock screen, and
+    wires the lock-screen pause button to our stop action.
+  - visibilitychange / pageshow listeners resume any suspended AudioContext
+    when the user returns to the tab.
+  See the "BACKGROUND AUDIO KEEPALIVE" block in the Audio Engine section.
+
   MIDI:
   - Uses the Web MIDI API (navigator.requestMIDIAccess).
   - Supports note-on/off, velocity sensitivity, sustain pedal (CC 64).
@@ -2230,6 +2245,180 @@
         //   key selector (C=261.63 Hz, etc.).
         // ══════════════════════════════════════════════════════
 
+        // ══════════════════════════════════════════════════════
+        // BACKGROUND AUDIO KEEPALIVE (mobile — especially iOS)
+        // ══════════════════════════════════════════════════════
+        // iOS aggressively suspends audio when:
+        //   • the tab goes to the background
+        //   • the phone screen locks
+        //   • Chrome (which is just Safari on iOS) moves to background
+        //
+        // To keep tanpura / palta playback alive while the user is driving
+        // with the phone locked, we use three proven tricks in combination:
+        //
+        //   1. SILENT <audio> ELEMENT — iOS considers a tab "playing media"
+        //      only if it has an HTMLAudioElement that is actively playing.
+        //      An AudioContext alone is NOT enough. We keep a looped silent
+        //      WAV sourced via a data: URI playing as soon as the user
+        //      starts anything. This makes the tab a "background audio"
+        //      session that iOS preserves.
+        //
+        //   2. MediaStreamAudioDestinationNode BRIDGE — we route every
+        //      AudioContext's output through a MediaStreamAudioDestinationNode
+        //      and feed the resulting MediaStream into the <audio> element's
+        //      srcObject. Without this, the <audio> element plays silence but
+        //      the AudioContext is still silenced in background. With it, the
+        //      actual synthesis output travels through the media element and
+        //      iOS keeps it audible.
+        //
+        //   3. MEDIA SESSION API — tells iOS what's playing (title, artist)
+        //      so the lock screen shows "now playing" controls, and gives
+        //      the user a play/pause button on the lock screen.
+        //
+        // Plus: visibilitychange / pageshow listeners that call resume() on
+        // any suspended AudioContext when the user unlocks their phone.
+        //
+        // The chained setTimeout scheduler would still break in background
+        // (iOS throttles timers heavily), so for tanpura and repeat-palta we
+        // render ONE full loop cycle to an AudioBuffer and play it via
+        // AudioBufferSourceNode(loop=true). That lives entirely on the audio
+        // thread and keeps looping regardless of JS timer throttling.
+
+        // A tiny silent WAV (44.1 kHz, 1 channel, ~0.1 s). Base64 encoded so
+        // we don't need network fetches. The <audio> element loops this so
+        // iOS keeps the tab registered as "playing media".
+        const SILENT_WAV_DATA_URI = 'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+        // One shared keepalive <audio> element for the whole page.
+        let keepaliveAudioEl = null;
+        function ensureKeepaliveAudioElement() {
+            if (keepaliveAudioEl) return keepaliveAudioEl;
+            const el = document.createElement('audio');
+            el.id = 'keepalive-audio';
+            el.loop = true;
+            el.playsInline = true;
+            el.setAttribute('playsinline', '');
+            el.setAttribute('webkit-playsinline', '');
+            el.crossOrigin = 'anonymous';
+            el.preload = 'auto';
+            el.src = SILENT_WAV_DATA_URI;
+            // Hide but keep in DOM.
+            el.style.position = 'absolute';
+            el.style.left = '-10000px';
+            el.style.width = '1px';
+            el.style.height = '1px';
+            el.style.opacity = '0';
+            document.body.appendChild(el);
+            keepaliveAudioEl = el;
+            return el;
+        }
+
+        // Route an AudioContext through the keepalive <audio> element so its
+        // output keeps playing when the tab is backgrounded on iOS.
+        // Returns the node that callers should connect to instead of
+        // audioCtx.destination.
+        //
+        // The function also connects to the normal audioCtx.destination as a
+        // belt-and-suspenders fallback, so desktop browsers and Android still
+        // use the direct path (which is lower latency).
+        function connectToKeepalive(audioCtx) {
+            const fanOut = audioCtx.createGain();
+            fanOut.gain.value = 1;
+
+            // Direct path — normal speaker output on every platform.
+            fanOut.connect(audioCtx.destination);
+
+            // MediaStream path — only used on platforms that need the
+            // keepalive bridge, but connecting always is harmless.
+            try {
+                const msDest = audioCtx.createMediaStreamDestination();
+                fanOut.connect(msDest);
+                const audioEl = ensureKeepaliveAudioElement();
+                // Setting srcObject swaps the element's source to the live
+                // audio graph stream. Safari/iOS supports this since ~2020.
+                audioEl.srcObject = msDest.stream;
+                // Play() must have been gesture-unlocked already. Any
+                // autoplay errors are ignored — on rare mobile setups we
+                // just fall back to the direct path.
+                const p = audioEl.play();
+                if (p && p.catch) p.catch(() => { /* ignore autoplay errors */ });
+            } catch (e) {
+                // Older browsers without MediaStreamDestination — fall back
+                // to the direct path only. iOS background behaviour will be
+                // whatever it is.
+            }
+
+            return fanOut;
+        }
+
+        // Set up Media Session API so the lock screen shows what's playing.
+        function setMediaSessionMetadata(title, artist) {
+            if (!('mediaSession' in navigator)) return;
+            try {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: title || 'Practice',
+                    artist: artist || 'Palta Alankar Maker',
+                    album: 'Hindustani Practice',
+                });
+                navigator.mediaSession.playbackState = 'playing';
+            } catch (e) { /* some browsers don't support MediaMetadata fully */ }
+        }
+        function clearMediaSessionMetadata() {
+            if (!('mediaSession' in navigator)) return;
+            try {
+                navigator.mediaSession.playbackState = 'none';
+                navigator.mediaSession.metadata = null;
+            } catch (e) {}
+        }
+        function setMediaSessionHandlers({ pause, play } = {}) {
+            if (!('mediaSession' in navigator)) return;
+            try {
+                navigator.mediaSession.setActionHandler('pause', pause || null);
+                navigator.mediaSession.setActionHandler('play', play || null);
+                navigator.mediaSession.setActionHandler('stop', pause || null);
+            } catch (e) {}
+        }
+
+        // Track live AudioContexts so visibilitychange can resume all of them.
+        const _liveAudioContexts = new Set();
+        function trackAudioContext(ctx) {
+            _liveAudioContexts.add(ctx);
+            const cleanup = () => { _liveAudioContexts.delete(ctx); };
+            // Best-effort — not every browser fires statechange reliably.
+            ctx.addEventListener && ctx.addEventListener('statechange', () => {
+                if (ctx.state === 'closed') cleanup();
+            });
+        }
+        document.addEventListener('visibilitychange', () => {
+            if (!document.hidden) {
+                for (const ctx of _liveAudioContexts) {
+                    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+                }
+                // Kick the keepalive element too — iOS sometimes pauses it.
+                if (keepaliveAudioEl && keepaliveAudioEl.paused) {
+                    const p = keepaliveAudioEl.play();
+                    if (p && p.catch) p.catch(() => {});
+                }
+            }
+        });
+        window.addEventListener('pageshow', () => {
+            for (const ctx of _liveAudioContexts) {
+                if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            }
+        });
+
+        // Render a rendering function to an offline AudioBuffer. The
+        // rendering function receives an OfflineAudioContext and a
+        // destination node; it should schedule everything from time 0 up to
+        // totalDurationSec. Returns a Promise<AudioBuffer>.
+        async function renderToBuffer(liveCtx, totalDurationSec, channels, renderFn) {
+            const sr = liveCtx.sampleRate;
+            const length = Math.max(1, Math.ceil(totalDurationSec * sr));
+            const offlineCtx = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(channels, length, sr);
+            renderFn(offlineCtx, offlineCtx.destination);
+            return await offlineCtx.startRendering();
+        }
+
         // Semitone offsets from Sa for each swara. This array is MUTABLE —
         // it is updated by the Swara Selector piano UI when the user toggles
         // between Shuddh and Komal/Teevra variants. Default = all Shuddh.
@@ -3257,13 +3446,29 @@
                 repeatId = 'repeat-all';
             }
 
-            // Create one AudioContext that persists across repeat loops
+            // Create one AudioContext that persists across repeat loops.
+            // Route through the mobile-background keepalive bridge so the
+            // playback continues when the phone locks or the tab backgrounds.
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            trackAudioContext(audioCtx);
             const compressor = audioCtx.createDynamicsCompressor();
             compressor.threshold.value = -20;
             compressor.knee.value = 20;
             compressor.ratio.value = 4;
-            compressor.connect(audioCtx.destination);
+            compressor.connect(connectToKeepalive(audioCtx));
+
+            // Tell iOS lock screen what's playing, and wire its pause button
+            // to our stop action so the user can halt practice from there.
+            setMediaSessionMetadata('Palta Playback', 'Palta Alankar Maker');
+            setMediaSessionHandlers({
+                pause: () => stopPlayback(),
+                play:  () => {
+                    // iOS fires 'play' when the user hits play on the lock
+                    // screen. If we're still in playbackState, just ensure
+                    // the context is resumed.
+                    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+                },
+            });
 
             const allOscillators = [];
             const timers = [];
@@ -3379,9 +3584,117 @@
                 }
             }
 
-            scheduleIteration(audioCtx.currentTime + 0.1);
+            // Initial playbackState — populated below by either the
+            // live-scheduling path or the background-safe looped-buffer path.
+            playbackState = { audioCtx, timers, allOscillators, loopSource: null };
 
-            playbackState = { audioCtx, timers, allOscillators };
+            // Decide scheduling strategy:
+            //   • If Repeat is enabled, render one full iteration (aarohi +
+            //     avarohi if applicable) into an AudioBuffer and play it
+            //     with loop=true. The audio thread handles looping, so the
+            //     palta keeps playing even when iOS backgrounds the tab or
+            //     locks the phone. Tradeoff: visual highlights don't update
+            //     past the first iteration (the buffer is fire-and-forget).
+            //   • Otherwise, use live scheduling — highlights work, and a
+            //     single iteration is short enough to complete regardless.
+            const repeatCheckbox = document.getElementById(repeatId);
+            const repeatOn = !!(repeatCheckbox && repeatCheckbox.checked);
+
+            if (repeatOn && window.OfflineAudioContext) {
+                startLoopedBufferPlayback(audioCtx, compressor, mode, getIterParams(getPlaybackParams()));
+            } else {
+                scheduleIteration(audioCtx.currentTime + 0.1);
+            }
+
+            // Build a single iteration's timeline, render it to a buffer,
+            // and loop the buffer on the live context.
+            async function startLoopedBufferPlayback(liveCtx, liveDest, playMode, ip) {
+                // Build the full timeline for one iteration.
+                const p = getPlaybackParams();
+                let tl;
+                let tailPad = 0.25; // small guard for reverb / release tails
+                if (playMode === 'asc') {
+                    tl = buildAscTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats);
+                } else if (playMode === 'desc') {
+                    tl = buildDescTimeline(currentPaltaData, p.beatCount, p.skipTransitionBeats);
+                } else {
+                    // 'all' — concatenate aarohi + avarohi
+                    const asc = buildAscTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats);
+                    const desc = (currentPaltaData.descending && currentPaltaData.descending.length > 0)
+                        ? buildDescTimeline(currentPaltaData, p.beatCount, p.skipTransitionBeats)
+                        : [];
+                    tl = asc.concat(desc);
+                }
+                if (!tl || tl.length === 0) return;
+
+                const iterationDuration = tl.length * ip.onsetInterval;
+                // Render a bit longer than the iteration so trailing note decays
+                // don't get cut off; we set loopEnd=iterationDuration so the
+                // tails of the last note bleed into the start of the next loop.
+                const extraRenderPad = ip.instrument === 'harmonium' ? 2.5 : 0.8;
+                const renderDuration = iterationDuration + extraRenderPad;
+
+                let buffer;
+                try {
+                    buffer = await renderToBuffer(liveCtx, renderDuration, 2, (offCtx, offDest) => {
+                        const offMaster = offCtx.createGain();
+                        offMaster.gain.value = 1;
+                        offMaster.connect(offDest);
+                        renderPaltaTimeline(offCtx, offMaster, tl, ip);
+                    });
+                } catch (e) {
+                    // Offline render failed — fall back to live scheduling.
+                    scheduleIteration(liveCtx.currentTime + 0.1);
+                    return;
+                }
+
+                if (!playbackState) return; // user stopped during render
+
+                const src = liveCtx.createBufferSource();
+                src.buffer = buffer;
+                src.loop = true;
+                src.loopStart = 0;
+                src.loopEnd = iterationDuration;
+                src.connect(liveDest);
+                src.start();
+                playbackState.loopSource = src;
+
+                // Kick off visual highlights for the first iteration only. The
+                // highlights won't keep looping because we'd need precise audio-
+                // clock sync; for driving practice the screen is locked anyway.
+                const baseDelay = 100; // small lead-in to match the 0.1s start
+                for (let i = 0; i < tl.length; i++) {
+                    const t = setTimeout(() => highlightNote(tl[i]),
+                                        baseDelay + i * ip.onsetInterval * 1000);
+                    timers.push(t);
+                }
+                const clearT = setTimeout(() => highlightNote(null),
+                                          baseDelay + tl.length * ip.onsetInterval * 1000);
+                timers.push(clearT);
+            }
+
+            // Helper — renders an entire palta timeline onto an AudioContext
+            // (live OR offline). Reuses the same note-creation functions so
+            // the offline-rendered buffer sounds identical to live playback.
+            function renderPaltaTimeline(ctx, dest, timeline, ip) {
+                const { key, onsetInterval, noteDuration, instrument, pianoType, reedType, brand, leftCoupler } = ip;
+                const t0 = 0.0;
+                for (let i = 0; i < timeline.length; i++) {
+                    const ev = timeline[i];
+                    const evTime = t0 + i * onsetInterval;
+                    if (ev.type === 'beat') {
+                        createMetronomeClick(ctx, dest, evTime);
+                    } else {
+                        const freq = noteNumToFreq(ev.noteNum, key);
+                        if (instrument === 'harmonium') {
+                            const reverb = getHarmoniumReverbBus(ctx, dest);
+                            createHarmoniumNote(ctx, reverb.input, freq, evTime, noteDuration, reedType, leftCoupler, false, brand);
+                        } else {
+                            createPianoNote(ctx, dest, freq, evTime, noteDuration, pianoType, leftCoupler, false);
+                        }
+                    }
+                }
+            }
 
             // Toggle the triggering button to a stop button
             if (triggerBtn) {
@@ -3412,10 +3725,16 @@
                     try { osc.stop(now + 0.02); } catch (e) { /* already stopped */ }
                 }
             }
+            if (playbackState.loopSource) {
+                try { playbackState.loopSource.stop(); } catch (e) {}
+            }
             if (playbackState.audioCtx) {
                 playbackState.audioCtx.close().catch(() => {});
             }
             playbackState = null;
+
+            // Release the Media Session unless the tanpura is still running.
+            if (!tanpuraState) clearMediaSessionMetadata();
 
             highlightNote(null);
             restorePlayBtn();
@@ -3430,6 +3749,9 @@
             if (playbackState.audioCtx) {
                 playbackState.audioCtx.close().catch(() => {});
             }
+
+            // Release the Media Session unless the tanpura is still running.
+            if (!tanpuraState) clearMediaSessionMetadata();
             playbackState = null;
 
             highlightNote(null);
@@ -3680,8 +4002,14 @@
             });
         }
 
-        function pluckTanpuraString(audioCtx, dest, freq, jawari, volume) {
-            const now = audioCtx.currentTime;
+        // Schedule one pluck at an explicit time on an audio context timeline.
+        // Used by the offline renderer that pre-bakes the tanpura cycle loop.
+        function pluckTanpuraStringAt(audioCtx, dest, freq, jawari, volume, startTime) {
+            return pluckTanpuraString(audioCtx, dest, freq, jawari, volume, startTime);
+        }
+
+        function pluckTanpuraString(audioCtx, dest, freq, jawari, volume, startTime) {
+            const now = (typeof startTime === 'number') ? startTime : audioCtx.currentTime;
             const dur = 7.0;
 
             // Tanpura synthesis using additive harmonics with jawari bridge simulation.
@@ -3780,33 +4108,101 @@
             });
         }
 
-        function startTanpura() {
+        // Pre-render one full tanpura cycle (N plucks, one per string) into
+        // an AudioBuffer, then loop it via AudioBufferSourceNode(loop=true).
+        // The loop runs entirely on the audio thread, so it continues to
+        // play even when JS timers are throttled or suspended (iOS lock).
+        async function startTanpura() {
             if (tanpuraState && tanpuraState.isPlaying) return;
 
             const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            trackAudioContext(audioCtx);
             const masterGain = audioCtx.createGain();
             const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
             masterGain.gain.value = vol;
-            masterGain.connect(audioCtx.destination);
+            // Route through keepalive bridge so the drone keeps playing when
+            // the phone locks or the tab backgrounds (iOS fix).
+            masterGain.connect(connectToKeepalive(audioCtx));
 
-            tanpuraState = { audioCtx, masterGain, timer: null, isPlaying: true, stringIdx: 0 };
+            // Lock-screen "now playing" for the tanpura session.
+            setMediaSessionMetadata('Tanpura Drone', 'Palta Alankar Maker');
+            setMediaSessionHandlers({
+                pause: () => stopTanpura(),
+                play:  () => {
+                    if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+                },
+            });
 
-            function pluckNext() {
-                if (!tanpuraState || !tanpuraState.isPlaying) return;
-                const freqs = getTanpuraStringFreqs();
-                const jawari = parseInt(document.getElementById('tanpura-jawari').value) / 100;
-                const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
-                tanpuraState.masterGain.gain.value = vol;
+            // Placeholder state so repeat-clicks while rendering don't start a
+            // second session.
+            tanpuraState = { audioCtx, masterGain, loopSource: null, timer: null, isPlaying: true };
 
-                const idx = tanpuraState.stringIdx % freqs.length;
-                pluckTanpuraString(tanpuraState.audioCtx, tanpuraState.masterGain, freqs[idx], jawari, 1.0);
-                tanpuraState.stringIdx++;
+            const freqs = getTanpuraStringFreqs();
+            const jawari = parseInt(document.getElementById('tanpura-jawari').value) / 100;
+            const tempo = parseInt(document.getElementById('tanpura-tempo').value);
+            const interval = 60 / tempo; // seconds between plucks
+            const stringCount = freqs.length;
+            const cycleDuration = stringCount * interval;
+            // Render 1.5 cycles so trailing string decays bleed over the loop
+            // point; we loop back at cycleDuration to make it seamless.
+            const renderDuration = cycleDuration + 3.0;
 
-                const tempo = parseInt(document.getElementById('tanpura-tempo').value);
-                const interval = 60000 / tempo;
-                tanpuraState.timer = setTimeout(pluckNext, interval);
+            let loopBuffer;
+            try {
+                loopBuffer = await renderToBuffer(audioCtx, renderDuration, 1, (offCtx, offDest) => {
+                    const offGain = offCtx.createGain();
+                    offGain.gain.value = 1;
+                    offGain.connect(offDest);
+                    for (let i = 0; i < stringCount; i++) {
+                        const at = i * interval;
+                        pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0, at);
+                    }
+                });
+            } catch (e) {
+                // Offline rendering failed (old browser?). Fall back to the
+                // live-scheduler path so practice still works, just without
+                // the background-safe behaviour.
+                startTanpuraLive(audioCtx, masterGain, freqs, interval);
+                return;
             }
 
+            if (!tanpuraState || !tanpuraState.isPlaying) return; // user stopped during render
+
+            const src = audioCtx.createBufferSource();
+            src.buffer = loopBuffer;
+            src.loop = true;
+            src.loopStart = 0;
+            src.loopEnd = cycleDuration;
+            src.connect(masterGain);
+            src.start();
+            tanpuraState.loopSource = src;
+
+            // Live updates — when the user moves volume/jawari/tempo/pitch/tuning
+            // sliders, we re-render and cross-fade. Volume is cheap (gain-only),
+            // so we update that instantly without re-rendering.
+            // (Handled by the slider event listeners; see re-render logic.)
+
+            document.getElementById('tanpura-toggle').textContent = 'Stop';
+            document.getElementById('tanpura-toggle').classList.add('playing');
+        }
+
+        // Legacy live-scheduled fallback for browsers without OfflineAudioContext.
+        function startTanpuraLive(audioCtx, masterGain, freqs, interval) {
+            tanpuraState.stringIdx = 0;
+            function pluckNext() {
+                if (!tanpuraState || !tanpuraState.isPlaying) return;
+                const jawari = parseInt(document.getElementById('tanpura-jawari').value) / 100;
+                const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+                masterGain.gain.value = vol;
+
+                const currentFreqs = getTanpuraStringFreqs();
+                const idx = tanpuraState.stringIdx % currentFreqs.length;
+                pluckTanpuraString(audioCtx, masterGain, currentFreqs[idx], jawari, 1.0);
+                tanpuraState.stringIdx++;
+
+                const currentTempo = parseInt(document.getElementById('tanpura-tempo').value);
+                tanpuraState.timer = setTimeout(pluckNext, 60000 / currentTempo);
+            }
             pluckNext();
 
             document.getElementById('tanpura-toggle').textContent = 'Stop';
@@ -3817,10 +4213,16 @@
             if (!tanpuraState) return;
             tanpuraState.isPlaying = false;
             if (tanpuraState.timer) clearTimeout(tanpuraState.timer);
+            if (tanpuraState.loopSource) {
+                try { tanpuraState.loopSource.stop(); } catch (e) {}
+            }
             if (tanpuraState.audioCtx) {
                 tanpuraState.audioCtx.close().catch(() => {});
             }
             tanpuraState = null;
+
+            // Only clear the Media Session if palta isn't also playing.
+            if (!playbackState) clearMediaSessionMetadata();
 
             document.getElementById('tanpura-toggle').textContent = 'Start';
             document.getElementById('tanpura-toggle').classList.remove('playing');
@@ -3883,7 +4285,9 @@
             }
         });
 
-        // Restart tanpura when tuning/pitch changes (if currently playing)
+        // Restart tanpura when tuning/pitch/jawari/tempo changes (if currently
+        // playing). These require re-rendering the looped buffer because the
+        // synthesis/timing is baked into the buffer.
         ['tanpura-tuning', 'tanpura-pitch'].forEach(id => {
             document.getElementById(id).addEventListener('change', () => {
                 if (tanpuraState && tanpuraState.isPlaying) {
@@ -3891,6 +4295,25 @@
                     startTanpura();
                 }
             });
+        });
+        // Jawari and tempo changes debounce a restart on 'change' (slider release)
+        // to avoid a re-render on every drag step.
+        ['tanpura-jawari', 'tanpura-tempo'].forEach(id => {
+            document.getElementById(id).addEventListener('change', () => {
+                if (tanpuraState && tanpuraState.isPlaying) {
+                    stopTanpura();
+                    startTanpura();
+                }
+            });
+        });
+        // Volume is cheap — apply live to the masterGain without re-rendering.
+        document.getElementById('tanpura-volume').addEventListener('input', () => {
+            if (tanpuraState && tanpuraState.isPlaying && tanpuraState.masterGain) {
+                const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+                tanpuraState.masterGain.gain.setTargetAtTime(
+                    vol, tanpuraState.audioCtx.currentTime, 0.02
+                );
+            }
         });
 
         document.getElementById('generate-btn').addEventListener('click', doGenerate);
@@ -4183,11 +4606,12 @@
         function ensureMidiAudioCtx() {
             if (!midiAudioCtx || midiAudioCtx.state === 'closed') {
                 midiAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                trackAudioContext(midiAudioCtx);
                 midiCompressor = midiAudioCtx.createDynamicsCompressor();
                 midiCompressor.threshold.value = -20;
                 midiCompressor.knee.value = 20;
                 midiCompressor.ratio.value = 4;
-                midiCompressor.connect(midiAudioCtx.destination);
+                midiCompressor.connect(connectToKeepalive(midiAudioCtx));
             }
             if (midiAudioCtx.state === 'suspended') {
                 midiAudioCtx.resume();

@@ -109,6 +109,19 @@ Three categories of preset patterns:
 - Register-dependent damper release time
 - Auto-detects MIDI devices with hot-plug support
 
+### Mobile Background Playback (iOS / Android)
+Designed for practising while driving with the phone locked. When either the tanpura or palta (with **Repeat** enabled) is playing:
+
+- **Silent `<audio>` element bridge** — every `AudioContext` routes through a `MediaStreamAudioDestinationNode` that feeds a hidden, looping `<audio>` element. iOS only keeps a tab audible in the background when it has an actively-playing HTMLAudioElement; this trick gets the synthesised output travelling through one.
+- **Pre-rendered loop buffers** — tanpura cycles and looped palta (aarohi + avarohi) are rendered once into an `AudioBuffer` via `OfflineAudioContext`, then played with `AudioBufferSourceNode.loop = true`. Looping runs entirely on the audio thread, so it keeps going even when iOS throttles JavaScript `setTimeout` in backgrounded tabs.
+- **Media Session API** — the lock screen shows "Tanpura Drone" or "Palta Playback" with an artist line. The lock-screen pause button is wired to the app's stop action.
+- **Auto-resume on return** — `visibilitychange` and `pageshow` handlers resume any suspended `AudioContext` as soon as the user unlocks the phone and comes back to the tab.
+
+Caveats:
+- Visual note highlights don't update past the first iteration when Repeat is on (the loop buffer is fire-and-forget for CPU efficiency). Sound is the source of truth.
+- Changing tempo / tuning / pitch / jawari while tanpura is playing triggers a re-render. Volume is applied live without re-rendering.
+- If Chrome on iOS blocks autoplay of the `<audio>` bridge, playback falls back to the direct `audioCtx.destination` path. This still works in the foreground; background behaviour on that device may revert to the OS default.
+
 ## Project Structure
 
 ```
@@ -175,8 +188,18 @@ All synthesis uses the Web Audio API (no audio samples).
 - **Harmonium reeds**: Source-filter model. Each reed is a `PeriodicWave` built from a 32-partial LTAS. All reeds mix into a per-brand cabinet filter (5 peaking biquads + high-shelf + lowpass) modeling the wooden enclosure, then the whole harmonium bus feeds a shared synthetic small-room convolution reverb. See `getHarmoniumReedWave()`, `HARMONIUM_BRANDS`, `buildHarmoniumCabinet()`, and `getHarmoniumReverbBus()`.
 - **Metronome**: Two sine oscillators (880 Hz + 1760 Hz) with instant attack and fast decay for a wood-block click sound.
 
+**Mobile background keepalive:**
+- `ensureKeepaliveAudioElement()` / `connectToKeepalive(ctx)` — routes every AudioContext through a MediaStreamAudioDestinationNode tied to a hidden, looping `<audio>` element so iOS keeps the tab audible when locked/backgrounded.
+- `setMediaSessionMetadata()` / `setMediaSessionHandlers()` — Media Session API integration for the lock screen.
+- `trackAudioContext()` — registers a context so `visibilitychange` / `pageshow` listeners can call `resume()` on it when the user returns to the tab.
+- `renderToBuffer(ctx, duration, channels, renderFn)` — helper that runs an OfflineAudioContext render and returns the resulting `AudioBuffer`. Used by tanpura and repeat-palta to pre-bake loop cycles.
+
 #### 5. Playback Engine
-Schedules notes on the Web Audio API timeline for sample-accurate timing. Uses `setTimeout` for visual highlighting (which doesn't need sample accuracy). Supports seamless aarohi→avarohi chaining and repeat loops.
+Two scheduling strategies:
+- **Live scheduling** (single-shot, repeat off): `scheduleSegment()` schedules notes on the Web Audio timeline and uses `setTimeout` to advance iterations and update highlights. Used when Repeat is off.
+- **Pre-rendered looped buffer** (repeat on): renders one full iteration of the palta (aarohi + avarohi) into an `AudioBuffer` via `OfflineAudioContext`, then plays it with `AudioBufferSourceNode.loop = true`. Looping happens on the audio thread, so playback continues indefinitely even when iOS throttles JS timers in backgrounded tabs. Visual highlights update for the first iteration only.
+
+Both strategies share the same note-creation functions, so the rendered buffer sounds identical to live-scheduled playback.
 
 **Key functions:**
 - `doGenerate()` — Parses input, generates palta, renders, sets tempo to 102 BPM. Auto-corrects input text to reflect swara variants.
@@ -197,9 +220,11 @@ Synthesizes a tanpura drone using the Web Audio API with additive sine harmonics
 - 7-second sustain per pluck with natural decay curves
 
 **Key functions:**
-- `pluckTanpuraString()` — Creates one string pluck with all harmonics and jawari simulation
+- `pluckTanpuraString(ctx, dest, freq, jawari, volume, startTime?)` — Creates one string pluck with all harmonics and jawari simulation. Accepts an explicit `startTime` so the function can also be used by the offline renderer.
+- `pluckTanpuraStringAt()` — Thin wrapper to emphasise the explicit-time usage from the offline loop renderer.
 - `getTanpuraStringFreqs()` — Computes string frequencies from tuning, key, and pitch register
-- `startTanpura()` / `stopTanpura()` — Manages the pluck cycle timer and AudioContext
+- `startTanpura()` — Renders one full string cycle into an `AudioBuffer` via `OfflineAudioContext`, then plays it with `AudioBufferSourceNode.loop = true`. The audio thread handles looping, so the drone keeps going when iOS backgrounds the tab. Falls back to live `setTimeout`-driven scheduling (`startTanpuraLive`) on older browsers without `OfflineAudioContext`.
+- `stopTanpura()` — Stops the loop source (or live timer), closes the AudioContext, and clears the Media Session if no palta is also running.
 
 #### 7. MIDI Keyboard
 Uses `navigator.requestMIDIAccess()` to connect to external keyboards. Each note-on creates synth oscillators wrapped in a per-note `masterGain` node. On note-off, the masterGain is faded to zero (simulating a damper). The Map `midiActiveNotes` tracks all sounding notes for cleanup.
