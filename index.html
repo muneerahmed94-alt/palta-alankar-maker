@@ -4219,33 +4219,51 @@
             const stringCount = freqs.length;
             const cycleDuration = stringCount * interval;
 
-            // Render ONE cycle of plucks followed by a long decay tail.
-            // Each pluck decays over ~7 s, so we give the tail plenty of
-            // time (~12 s) to fully fade. buildSeamlessLoopBuffer will
-            // then fold the entire tail back onto the cycle, wrapping
-            // modulo cycleDuration. That modulo wrap stacks multiple
-            // "iterations worth" of decay onto the cycle — which matches
-            // what real steady-state playback produces — without the
-            // double-attack artefact that warm-up cycles would cause.
+            // Seamless-loop technique used here:
+            //
+            // 1. Render WARM_CYCLES + 1 cycles of plucks into one long
+            //    buffer. That gives previous-cycle decays time to reach
+            //    steady state by the time we reach the last cycle.
+            // 2. Extract the LAST cycle plus one extra crossfade window
+            //    from the render. This snapshot has both (a) steady-state
+            //    decay overlap, and (b) a little extra tail past the
+            //    cycle end for crossfading.
+            // 3. Equal-power crossfade the first crossfadeLen samples of
+            //    the snapshot with the tail samples. This blends the
+            //    attack-heavy start of the cycle with the decay-heavy
+            //    end, masking the hard discontinuity that a new pluck's
+            //    attack otherwise creates at the loop boundary.
+            //
+            // The crossfade has to be long enough to span a pluck attack
+            // (~50 ms) but short enough that it doesn't blur the rhythm.
+            // 120 ms works across the full tempo range.
             const loopSec = cycleDuration;
-            const TAIL_SEC = 12;
-            const renderSec = cycleDuration + TAIL_SEC;
+            const WARM_CYCLES = 3;
+            const TOTAL_CYCLES = WARM_CYCLES + 1;
+            const crossfadeSec = 0.12;
+            const renderSec = TOTAL_CYCLES * cycleDuration + crossfadeSec;
 
             let blob;
             try {
                 const fullBuffer = await renderToBuffer(sampleRate, renderSec, 1, (offCtx, offDest) => {
                     const offGain = offCtx.createGain();
-                    // The real tanpura's plucks sit fairly low in the mix
-                    // (the drone builds through decay overlap). Rendering
-                    // at 1.0 and letting the steady-state overlap build
-                    // the loudness keeps peaks in check.
                     offGain.gain.value = 1;
                     offGain.connect(offDest);
-                    for (let i = 0; i < stringCount; i++) {
-                        pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0, i * interval);
+                    for (let cycle = 0; cycle < TOTAL_CYCLES; cycle++) {
+                        const cycleStart = cycle * cycleDuration;
+                        for (let i = 0; i < stringCount; i++) {
+                            pluckTanpuraStringAt(offCtx, offGain, freqs[i], jawari, 1.0,
+                                                 cycleStart + i * interval);
+                        }
                     }
                 });
-                blob = audioBufferToWavBlob(buildSeamlessLoopBuffer(fullBuffer, loopSec));
+                // Snapshot = the last cycle (steady state) plus a bit of
+                // the next cycle's opening for the crossfade.
+                const sliceStartSec = WARM_CYCLES * cycleDuration;
+                const snapshot = sliceBuffer(fullBuffer, sliceStartSec, cycleDuration + crossfadeSec);
+                const looped = buildCrossfadedLoop(snapshot, cycleDuration, crossfadeSec);
+                const normalised = normaliseBuffer(looped, 0.9);
+                blob = audioBufferToWavBlob(normalised);
             } catch (e) {
                 tanpuraState = null;
                 document.getElementById('tanpura-toggle').textContent = 'Start';
@@ -4367,6 +4385,90 @@
                 numberOfChannels: buffer.numberOfChannels,
                 sampleRate: sr,
                 length: newLen,
+                getChannelData: (i) => channels[i],
+            };
+        }
+
+        // Build a seamless looping buffer from `buffer` using an equal-
+        // power crossfade at the loop boundary.
+        //
+        //   buffer        = contains loopSec of audio + crossfadeSec of
+        //                   "extra" samples past the end
+        //   loopSec       = the target loop length
+        //   crossfadeSec  = duration of the crossfade
+        //
+        // Output: a loopLen-sample buffer where the first crossfadeLen
+        // samples are an equal-power crossfade between the buffer's
+        // TAIL (samples [loopLen, loopLen + crossfadeLen)) and the
+        // buffer's HEAD (samples [0, crossfadeLen)). The rest of the
+        // output is the buffer's samples [crossfadeLen, loopLen).
+        //
+        // Equal-power: sin²(θ) + cos²(θ) = 1, which preserves perceived
+        // loudness through the crossfade (a linear fade would dip at the
+        // midpoint).
+        function buildCrossfadedLoop(buffer, loopSec, crossfadeSec) {
+            const sr = buffer.sampleRate;
+            const loopLen = Math.min(buffer.length, Math.round(loopSec * sr));
+            const xLen = Math.min(loopLen, Math.round(crossfadeSec * sr));
+            const haveTail = buffer.length >= loopLen + xLen;
+
+            const channels = [];
+            for (let c = 0; c < buffer.numberOfChannels; c++) {
+                const src = buffer.getChannelData(c);
+                const out = new Float32Array(loopLen);
+                out.set(src.subarray(0, loopLen));
+                if (haveTail && xLen > 0) {
+                    for (let i = 0; i < xLen; i++) {
+                        const theta = (i / xLen) * (Math.PI / 2);
+                        const fadeOut = Math.cos(theta);  // 1 → 0
+                        const fadeIn = Math.sin(theta);   // 0 → 1
+                        // At output index i:
+                        //   fresh attack from src[i] (currently full amp)
+                        //     fades IN from 0 over the crossfade
+                        //   continuing tail from src[loopLen + i]
+                        //     fades OUT from full amp to 0
+                        // So the attack transient appears gradually
+                        // while the trailing decay smoothly concludes.
+                        out[i] = fadeIn * src[i] + fadeOut * src[loopLen + i];
+                    }
+                }
+                channels.push(out);
+            }
+            return {
+                numberOfChannels: buffer.numberOfChannels,
+                sampleRate: sr,
+                length: loopLen,
+                getChannelData: (i) => channels[i],
+            };
+        }
+
+        // Scale an AudioBuffer view so its absolute peak equals `target`.
+        // Used after crossfading / tail-folding to avoid clipping when
+        // the WAV encoder converts to int16.
+        function normaliseBuffer(buffer, target) {
+            const sr = buffer.sampleRate;
+            const len = buffer.length;
+            let peak = 0;
+            for (let c = 0; c < buffer.numberOfChannels; c++) {
+                const data = buffer.getChannelData(c);
+                for (let i = 0; i < len; i++) {
+                    const a = Math.abs(data[i]);
+                    if (a > peak) peak = a;
+                }
+            }
+            if (peak <= target || peak === 0) return buffer;
+            const scale = target / peak;
+            const channels = [];
+            for (let c = 0; c < buffer.numberOfChannels; c++) {
+                const data = buffer.getChannelData(c);
+                const scaled = new Float32Array(len);
+                for (let i = 0; i < len; i++) scaled[i] = data[i] * scale;
+                channels.push(scaled);
+            }
+            return {
+                numberOfChannels: buffer.numberOfChannels,
+                sampleRate: sr,
+                length: len,
                 getChannelData: (i) => channels[i],
             };
         }
