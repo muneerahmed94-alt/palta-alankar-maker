@@ -9,7 +9,7 @@ Developed by Muneer Ahmed Shaik.
 ## Features
 
 ### Tanpura Drone
-- Synthesized tanpura drone using additive harmonics with jawari bridge simulation
+- Synthesized tanpura drone with a physically-inspired 16-partial harmonic stack and jawari bridge simulation. Perceptually-tuned sweet-band emphasis at partials 3/5/7, slow per-partial tremolo (for shimmer), slow jawari bloom on the upper partials (so they swell in over 2–5 seconds rather than appearing immediately), and a steady-state rendered loop with an equal-power crossfaded boundary so the drone is continuous and click-free.
 - **Strings**: Pa Sa Sa Sa (default), Ma Sa Sa Sa, Ni Sa Sa Sa, plus 5-string variants
 - **Pitch register**: Male (lower octave) / Female (higher octave)
 - **Volume**: adjustable slider (0–100)
@@ -221,22 +221,34 @@ Palta playback uses the offline-render + `<audio>`-element pattern so it keeps p
 - `setTempo(bpm)` — Sets both the slider and input to the given BPM value.
 
 #### 6. Tanpura Engine
-Synthesizes a tanpura drone using the Web Audio API with additive sine harmonics and jawari bridge simulation.
+Synthesizes a tanpura drone with additive sine harmonics whose amplitude
+envelopes are shaped to match the acoustic features of a real tanpura:
 
-**Synthesis approach:**
-- 16 sine oscillators per string pluck at harmonic frequencies (with slight inharmonicity and detuning for natural character)
-- **Jawari bridge simulation**: A sweeping peaking filter moves upward in frequency over 2.5 seconds, simulating the string's contact point creeping up the curved bridge surface
-- **Delayed harmonic swell**: The fundamental peaks early and decays; harmonics 3-5 swell 0.3-1.5s after pluck; harmonics 6+ swell 1-3s after pluck. This delayed bloom is what distinguishes tanpura from piano/guitar
-- **Sympathetic resonance** at octave and fifth with slow LFO tremolo for the "singing" quality
-- 7-second sustain per pluck with natural decay curves
+**Per-pluck synthesis (`pluckTanpuraString`):**
+- 16 sine partials at `freq × n × sqrt(1 + 0.00008 n²)` (slight stretched inharmonicity) with ±3 cents random detune per partial so the stack feels alive.
+- **Harmonic profile** tuned by ear toward real tanpura recordings — not a descending 1/n rolloff. The "sweet band" at partials 3, 5, 7 is emphasised (these are the 5th, 10th, and 14th above the fundamental — the strongest perceptual overtones of a tanpura); the octave (partial 2) is held back so it doesn't dominate.
+- **Envelope by partial group**:
+  - Fundamental (n=1): sharp 30 ms attack, falls to 55% within 0.3 s, long smooth decay over 9 s.
+  - Octave (n=2): gentler 80 ms attack, supports the fundamental at 60% sustain.
+  - Partials 3–16: **jawari bloom** — each starts silent with a delay proportional to harmonic number, slowly ramps UP to its peak over 0.4–5 s, then settles to a ~50% sustain for the long decay. Higher partials take longer to reach peak — mirroring the string's grazing contact creeping up the curved bridge.
+- **Per-partial tremolo** (0.4–0.9 Hz, 15% depth, random phase per partial) on partials 3+ gives the characteristic shimmering "singing" quality. Random phase prevents all partials from wobbling in sync.
+- **Sub-fundamental sine** at `freq / 2` with a slow attack provides subtle body warmth.
+- **Body lowpass** at 6.5 kHz rolls off any harshness without dulling the sweet band.
+
+**Steady-state loop rendering (`startTanpura`):**
+- Because each pluck decays for ~9 s but a cycle may be only ~4 s long, naïvely looping one cycle's worth of plucks produces a clicky boundary. Instead:
+  1. Render WARM_CYCLES of plucks (computed so at least 10 s of history precedes the snapshot) plus one snapshot cycle plus a short crossfade window.
+  2. Slice out the last cycle plus ~180 ms of the following cycle's opening.
+  3. Equal-power crossfade (`buildCrossfadedLoop`) the head of the slice with the tail window.
+  4. Normalise to 0.9 peak (`normaliseBuffer`) to avoid int16 clipping.
+- The resulting WAV plays through a hidden `<audio>` element with `loop = true`. The native media pipeline handles looping at full speed, so playback continues when iOS backgrounds the tab or locks the phone.
 
 **Key functions:**
-- `pluckTanpuraString(ctx, dest, freq, jawari, volume, startTime?)` — Creates one string pluck with all harmonics and jawari simulation. Accepts an explicit `startTime` so the function can also be used by the offline renderer.
-- `pluckTanpuraStringAt()` — Thin wrapper to emphasise the explicit-time usage from the offline loop renderer.
-- `getTanpuraStringFreqs()` — Computes string frequencies from tuning, key, and pitch register
-- `startTanpura()` — Renders one full string cycle into an `AudioBuffer` via `OfflineAudioContext`, trims to exactly one cycle length, encodes to a WAV blob via `audioBufferToWavBlob()`, and plays through a hidden `<audio>` element with `loop = true`. Native media-element playback keeps the drone going at full speed when iOS backgrounds the tab or the phone locks — WebAudio alone gets throttled in background.
-- `trimBuffer(buffer, durationSec)` — returns a lightweight view over the first N seconds of an AudioBuffer. Used to clip the render so the loop wraps cleanly at the cycle boundary.
-- `stopTanpura()` — pauses the `<audio>` element, revokes the blob URL, closes the temporary AudioContext, and clears the Media Session if no palta is also running.
+- `pluckTanpuraString(ctx, dest, freq, jawari, volume, startTime?)` — Creates one string pluck with all harmonics and jawari bloom envelopes.
+- `pluckTanpuraStringAt()` — Thin wrapper emphasising explicit-time usage from the offline renderer.
+- `getTanpuraStringFreqs()` — Computes string frequencies from tuning, key, and pitch register.
+- `startTanpura()` — Renders the steady-state cycle, crossfades the loop boundary, encodes to WAV, and plays through an `<audio>` element with `loop = true`.
+- `stopTanpura()` — Pauses the `<audio>` element, revokes the blob URL, and clears the Media Session if no palta is also running.
 
 #### 7. MIDI Keyboard
 Uses `navigator.requestMIDIAccess()` to connect to external keyboards. Each note-on creates synth oscillators wrapped in a per-note `masterGain` node. On note-off, the masterGain is faded to zero (simulating a damper). The Map `midiActiveNotes` tracks all sounding notes for cleanup.

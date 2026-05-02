@@ -4087,102 +4087,168 @@
 
         function pluckTanpuraString(audioCtx, dest, freq, jawari, volume, startTime) {
             const now = (typeof startTime === 'number') ? startTime : audioCtx.currentTime;
-            const dur = 7.0;
+            const dur = 9.0; // extended to capture the long jawari bloom
 
-            // Tanpura synthesis using additive harmonics with jawari bridge simulation.
-            // The jawari bridge causes a "grazing contact" where the string touches
-            // a curved surface, transferring energy from fundamental to upper harmonics
-            // AFTER the pluck. This creates the characteristic shimmering drone where
-            // overtones SWELL over time rather than decaying immediately.
+            // Tanpura synthesis — physically-inspired additive model with
+            // careful attention to what makes a real tanpura sound sweet:
+            //
+            //   1. FUNDAMENTAL + OCTAVE anchor the pitch but are NOT the
+            //      loudest partials — in a real tanpura the brilliance
+            //      comes from higher partials gradually blooming.
+            //   2. JAWARI BLOOM — partials 3–10 have delayed attacks and
+            //      slow swells, each peaking at different times across
+            //      2–6 seconds. This replicates the grazing contact of
+            //      string on bridge shifting up the curved slope.
+            //   3. Each partial has its own slow tremolo LFO (0.4–0.9 Hz)
+            //      for the characteristic shimmer / "singing" quality.
+            //   4. Slight inharmonicity + per-partial random detune makes
+            //      the harmonic stack feel like a real string rather
+            //      than a fundamental-plus-perfect-overtones stack.
+            //   5. Gentle lowpass "body resonance" trims harshness at
+            //      very high harmonics (above partial ~16) without
+            //      dulling the signature 3rd-8th "sweet spot" partials.
+            //   6. Per-pluck phase randomisation on upper harmonics so
+            //      successive plucks aren't phase-locked (avoids beating
+            //      between strings).
 
             const masterEnv = audioCtx.createGain();
-            masterEnv.gain.value = volume * 0.1;
+            masterEnv.gain.value = volume * 0.08;
             masterEnv.connect(dest);
 
-            // Sweeping bandpass filter simulates the bridge contact point creeping
-            // up the jawari surface over time, exciting progressively higher harmonics
-            const sweepFilter = audioCtx.createBiquadFilter();
-            sweepFilter.type = 'peaking';
-            sweepFilter.Q.value = 0.8 + jawari * 2;
-            sweepFilter.gain.value = 6 + jawari * 12;
-            sweepFilter.frequency.setValueAtTime(freq * 1.5, now);
-            sweepFilter.frequency.exponentialRampToValueAtTime(freq * (3 + jawari * 10), now + 2.5);
-            sweepFilter.frequency.exponentialRampToValueAtTime(freq * 2, now + dur);
-            sweepFilter.connect(masterEnv);
+            // Shared body resonance lowpass — softens partials above
+            // ~6 kHz but leaves the sweet spot (roughly partials 3-10
+            // depending on pitch) intact.
+            const bodyLP = audioCtx.createBiquadFilter();
+            bodyLP.type = 'lowpass';
+            bodyLP.frequency.value = 6500;
+            bodyLP.Q.value = 0.4;
+            bodyLP.connect(masterEnv);
 
-            // Harmonic peak amplitudes — octaves and fifths emphasized like real tanpura
-            const harmonicAmps = [1.0, 0.8, 0.5, 0.4, 0.35, 0.2, 0.25, 0.15, 0.1, 0.12, 0.08, 0.06, 0.09, 0.05, 0.04, 0.03];
-            const numHarmonics = 16;
+            // Harmonic amplitude profile tuned by ear toward real tanpura
+            // recordings. Partials 3-6 are the "sweet band" and get the
+            // biggest swell. Partial 2 (octave) is restrained so it
+            // doesn't dominate. Odd partials slightly favoured at mid
+            // range because of the bridge's nonlinear coupling.
+            const harmonicAmps = [
+                0.85, // 1 — fundamental: strong but not overwhelming
+                0.55, // 2 — octave: supportive
+                0.95, // 3 — the "sweet" 5th above octave, bloom target
+                0.45, // 4
+                0.90, // 5 — the "tenth" (3rd above 2 octaves), another sweet peak
+                0.50, // 6
+                0.70, // 7
+                0.35, // 8
+                0.55, // 9
+                0.30, // 10
+                0.35, // 11
+                0.22, // 12
+                0.28, // 13
+                0.18, // 14
+                0.18, // 15
+                0.12, // 16
+            ];
+            const numHarmonics = harmonicAmps.length;
+
+            // Overall jawari intensity scales the bloom of upper partials.
+            const bloomK = 0.4 + jawari * 1.2;
 
             for (let n = 1; n <= numHarmonics; n++) {
+                const baseAmp = harmonicAmps[n - 1] * volume;
+                // Slight stretched inharmonicity — real strings
+                const inharmonicity = 1 + 0.00008 * n * n;
+                // Per-partial random detune (±3 cents) — keeps the stack
+                // alive and prevents dead phase locking
+                const detune = (Math.random() - 0.5) * 6; // cents
+
                 const osc = audioCtx.createOscillator();
                 osc.type = 'sine';
-                // Slight inharmonicity — real strings have stretched partials
-                const inharmonicity = 1 + 0.00012 * n * n;
                 osc.frequency.value = freq * n * inharmonicity;
-                // Subtle detuning for shimmer/beating
-                if (n > 1) osc.frequency.value *= (1 + (Math.random() - 0.5) * 0.002);
+                osc.detune.value = detune;
 
                 const env = audioCtx.createGain();
-                const amp = (harmonicAmps[n - 1] || (0.5 / n)) * (1 + jawari * (n > 2 ? 1.5 : 0));
 
-                // JAWARI EFFECT: fundamental peaks early then decays;
-                // upper harmonics have DELAYED attack — they swell after the pluck
-                if (n <= 2) {
-                    // Fundamental and octave: quick attack, gradual decay
-                    env.gain.setValueAtTime(0, now);
-                    env.gain.linearRampToValueAtTime(amp, now + 0.05);
-                    env.gain.setTargetAtTime(amp * 0.6, now + 0.3, 1.0);
-                    env.gain.setTargetAtTime(0.0001, now + dur * 0.8, 1.2);
-                } else if (n <= 5) {
-                    // Mid harmonics (3rd-5th): delayed swell peaking at 0.5-1.5s
-                    const delay = 0.1 + (n - 2) * 0.15 * (1 + jawari);
-                    const peakT = 0.3 + (n - 2) * 0.3;
-                    env.gain.setValueAtTime(0, now);
-                    env.gain.setValueAtTime(0, now + delay * 0.5);
-                    env.gain.linearRampToValueAtTime(amp * jawari * 1.2, now + peakT);
-                    env.gain.setTargetAtTime(amp * jawari * 0.4, now + peakT + 0.5, 0.8 + Math.random() * 0.4);
-                    env.gain.setTargetAtTime(0.0001, now + dur * 0.7, 1.0);
+                // Each partial group has a distinctive envelope shape
+                // — this is what makes the tanpura "evolve" rather
+                // than just "decay":
+                if (n === 1) {
+                    // Fundamental — firm attack, steady sustain, long decay
+                    const peak = baseAmp;
+                    env.gain.setValueAtTime(0.0001, now);
+                    env.gain.linearRampToValueAtTime(peak, now + 0.03);
+                    // Holds high for ~0.8 s, then glides toward a lower
+                    // sustain level that runs for the bulk of the note
+                    env.gain.setTargetAtTime(peak * 0.55, now + 0.3, 1.2);
+                    env.gain.setTargetAtTime(0.0001, now + dur * 0.85, 1.5);
+                } else if (n === 2) {
+                    // Octave — gentle attack, sustained support
+                    const peak = baseAmp;
+                    env.gain.setValueAtTime(0.0001, now);
+                    env.gain.linearRampToValueAtTime(peak, now + 0.08);
+                    env.gain.setTargetAtTime(peak * 0.6, now + 0.5, 1.5);
+                    env.gain.setTargetAtTime(0.0001, now + dur * 0.8, 1.8);
                 } else {
-                    // High harmonics (6th+): longer delayed swell, shimmer
-                    const delay = 0.3 + (n - 5) * 0.2;
-                    const peakT = 1.0 + (n - 5) * 0.3;
-                    env.gain.setValueAtTime(0, now);
-                    env.gain.setValueAtTime(0, now + delay);
-                    env.gain.linearRampToValueAtTime(amp * jawari * 0.8, now + Math.min(peakT, dur * 0.5));
-                    env.gain.setTargetAtTime(0.0001, now + dur * 0.5, 0.6 + Math.random() * 0.3);
+                    // Partials 3+ — JAWARI BLOOM
+                    // - Start silent, with an initial delay that grows
+                    //   with harmonic number (higher partials take
+                    //   longer to reach peak — this is the bridge
+                    //   contact slowly creeping up the slope)
+                    // - Peak somewhere between 0.5 s and 4 s depending
+                    //   on which partial
+                    // - Slow decay afterwards
+                    const delay = 0.05 + (n - 2) * 0.10;
+                    const peakT = 0.4 + (n - 2) * 0.35 + Math.random() * 0.3;
+                    const peak = baseAmp * bloomK;
+                    env.gain.setValueAtTime(0.0001, now);
+                    env.gain.setValueAtTime(0.0001, now + delay);
+                    // Ramp UP slowly
+                    env.gain.linearRampToValueAtTime(peak, now + peakT);
+                    // Long gentle sustain at 50-60% of peak
+                    env.gain.setTargetAtTime(peak * 0.5, now + peakT + 0.3, 1.5);
+                    // Very slow final decay (the "bloom" sustains)
+                    env.gain.setTargetAtTime(0.0001, now + dur * 0.75, 1.8);
+                }
+
+                // Per-partial slow tremolo — 0.4-0.9 Hz shimmer. Each
+                // partial has its own random phase/frequency so the
+                // overall sound has complex movement, not a single
+                // unified wobble. This is the "singing" quality of a
+                // real tanpura.
+                if (n >= 3) {
+                    const lfoFreq = 0.35 + Math.random() * 0.7;
+                    const lfoDepth = baseAmp * 0.15; // 15% depth
+                    const lfo = audioCtx.createOscillator();
+                    const lfoGain = audioCtx.createGain();
+                    lfo.type = 'sine';
+                    lfo.frequency.value = lfoFreq;
+                    // Random phase offset so partials don't wobble in sync
+                    lfo.start(now + Math.random() * 0.5);
+                    lfo.stop(now + dur + 1);
+                    lfoGain.gain.value = lfoDepth;
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(env.gain);
                 }
 
                 osc.connect(env);
-                env.connect(sweepFilter);
+                env.connect(bodyLP);
                 osc.start(now);
                 osc.stop(now + dur + 1);
             }
 
-            // Sympathetic resonance with slow amplitude modulation for the "singing" quality
-            const sympFreqs = [freq * 2, freq * 3];
-            sympFreqs.forEach(sf => {
-                const osc = audioCtx.createOscillator();
-                osc.type = 'sine';
-                osc.frequency.value = sf;
-                const env = audioCtx.createGain();
-                env.gain.setValueAtTime(0, now);
-                env.gain.linearRampToValueAtTime(0.02 * jawari, now + 1.5);
-                env.gain.setTargetAtTime(0.0001, now + dur * 0.6, 1.5);
-                // Slow tremolo
-                const lfo = audioCtx.createOscillator();
-                lfo.frequency.value = 0.5 + Math.random() * 0.8;
-                const lfoG = audioCtx.createGain();
-                lfoG.gain.value = 0.01 * jawari;
-                lfo.connect(lfoG);
-                lfoG.connect(env.gain);
-                osc.connect(env);
-                env.connect(masterEnv);
-                osc.start(now);
-                osc.stop(now + dur + 1);
-                lfo.start(now);
-                lfo.stop(now + dur + 1);
-            });
+            // Sympathetic sub-fundamental — gives weight and warmth.
+            // A real tanpura's body resonates at the tonic, subtly
+            // reinforcing the fundamental from below.
+            const subOsc = audioCtx.createOscillator();
+            const subEnv = audioCtx.createGain();
+            subOsc.type = 'sine';
+            subOsc.frequency.value = freq * 0.5;
+            subEnv.gain.setValueAtTime(0.0001, now);
+            subEnv.gain.linearRampToValueAtTime(volume * 0.15, now + 0.2);
+            subEnv.gain.setTargetAtTime(volume * 0.08, now + 1.0, 2.0);
+            subEnv.gain.setTargetAtTime(0.0001, now + dur * 0.8, 1.5);
+            subOsc.connect(subEnv);
+            subEnv.connect(masterEnv);
+            subOsc.start(now);
+            subOsc.stop(now + dur + 1);
         }
 
         // Pre-render one full tanpura cycle (N plucks, one per string) to
@@ -4238,9 +4304,13 @@
             // (~50 ms) but short enough that it doesn't blur the rhythm.
             // 120 ms works across the full tempo range.
             const loopSec = cycleDuration;
-            const WARM_CYCLES = 3;
+            // Each pluck's jawari bloom extends ~9 s. Compute warm-up
+            // cycles so we have at least 10 s of pre-snapshot history
+            // regardless of tempo — steady-state overlap is what gives
+            // the drone its "fullness."
+            const WARM_CYCLES = Math.max(3, Math.ceil(10 / cycleDuration));
             const TOTAL_CYCLES = WARM_CYCLES + 1;
-            const crossfadeSec = 0.12;
+            const crossfadeSec = 0.18;
             const renderSec = TOTAL_CYCLES * cycleDuration + crossfadeSec;
 
             let blob;
