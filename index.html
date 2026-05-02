@@ -2406,13 +2406,18 @@
             const entry = _mediaPlayers.get(name);
             if (!entry) return;
             try { entry.el.pause(); } catch (e) {}
-            // Don't call load() — on iOS that sometimes requires a fresh
-            // user gesture. Pause + revoke-blob-URL is enough to release
-            // the resources; the element stays usable for the next play.
             if (entry.blobUrl) {
                 URL.revokeObjectURL(entry.blobUrl);
                 entry.blobUrl = null;
             }
+            // Clear the element's src so a stale reference can't be
+            // resumed by visibilitychange / focus handlers. Setting
+            // removeAttribute('src') + calling load() is the cross-
+            // browser-safe way to fully reset an <audio> element.
+            try {
+                entry.el.removeAttribute('src');
+                entry.el.load();
+            } catch (e) { /* ignore */ }
         }
 
 
@@ -2461,7 +2466,16 @@
             }
         }
         function resumeAllPlayers() {
-            for (const { el } of _mediaPlayers.values()) {
+            // Only resume a media player if its owning state is still
+            // active. Without this check, a user who pressed Stop and
+            // then switched tabs and came back would have their
+            // playback spontaneously restart — because visibilitychange
+            // would naïvely play() any paused <audio> it found.
+            for (const [name, { el }] of _mediaPlayers.entries()) {
+                const ownerActive =
+                    (name === 'palta'   && playbackState) ||
+                    (name === 'tanpura' && tanpuraState && tanpuraState.isPlaying);
+                if (!ownerActive) continue;
                 if (el.paused && el.src) {
                     const p = el.play();
                     if (p && p.catch) p.catch(() => {});
