@@ -3587,12 +3587,21 @@
                 mediaName: 'palta',
             };
 
-            // Toggle the triggering button to a stop button immediately.
+            // Label the triggering button with "Loading..." while the
+            // offline render is in flight (can take a few seconds for
+            // long harmonium paltas with reverb). When playback actually
+            // begins, flipToStop() below replaces it with "Stop".
             if (triggerBtn) {
                 activePlayBtn = triggerBtn;
                 activePlayBtn._origHTML = activePlayBtn.innerHTML;
-                activePlayBtn.innerHTML = '&#9632; Stop';
+                activePlayBtn.innerHTML = 'Loading...';
                 activePlayBtn.classList.add('stopping');
+                activePlayBtn.disabled = false; // stay clickable so user can cancel
+            }
+            function flipToStop() {
+                if (activePlayBtn && playbackState) {
+                    activePlayBtn.innerHTML = '&#9632; Stop';
+                }
             }
 
             // ---- Prime the <audio> element INSIDE the user gesture before
@@ -3617,7 +3626,7 @@
             const repeatCbEarly = document.getElementById(repeatId);
             const repeatOn = !!(repeatCbEarly && repeatCbEarly.checked);
 
-            renderPaltaBuffer(sampleRate, tl, ip, renderSec).then((buffer) => {
+            renderPaltaBuffer(sampleRate, tl, ip, renderSec).then(async (buffer) => {
                 if (!playbackState || playbackState.mediaName !== 'palta') return;
 
                 const shaped = repeatOn
@@ -3629,6 +3638,21 @@
                 const entry = _mediaPlayers.get('palta');
                 if (!entry) return;
                 entry.el.loop = repeatOn;
+
+                // If the tanpura is already playing, delay the palta
+                // start so its first note lands on a tanpura cycle
+                // boundary. Capped at ~2 s to keep the UI feeling
+                // responsive — if the next boundary is further away we
+                // just start immediately.
+                if (tanpuraState && tanpuraState.isPlaying &&
+                    typeof tanpuraState.msUntilNextCycle === 'function') {
+                    const waitMs = tanpuraState.msUntilNextCycle();
+                    if (waitMs > 40 && waitMs < 2000) {
+                        await new Promise(r => setTimeout(r, waitMs));
+                        if (!playbackState || playbackState.mediaName !== 'palta') return;
+                    }
+                }
+
                 loadAndPlayBlob('palta', blob).then(() => {
                     if (!repeatOn) {
                         const cleanup = () => {
@@ -3639,11 +3663,27 @@
                     }
                     // Start the currentTime-driven highlight loop AFTER
                     // play() resolves so the first tick happens once audio
-                    // is actually running.
+                    // is actually running. Also flip the button label
+                    // from "Loading..." to "Stop".
                     startHighlightLoop(entry.el, tl, onsetInterval, iterationSec);
+                    // Record when audio actually started + the onset
+                    // interval, so a subsequent tanpura start can align
+                    // to the palta's next downbeat.
+                    if (playbackState) {
+                        playbackState.onsetInterval = onsetInterval;
+                        playbackState.startWallMs = performance.now();
+                        playbackState.msUntilNextBeat = function () {
+                            if (!playbackState || !playbackState.startWallMs) return 0;
+                            const elapsed = (performance.now() - playbackState.startWallMs) / 1000;
+                            const beat = onsetInterval;
+                            const intoBeat = elapsed - Math.floor(elapsed / beat) * beat;
+                            return (beat - intoBeat) * 1000;
+                        };
+                    }
+                    flipToStop();
                 }).catch(() => {
-                    // Still start the loop — the element will catch up.
                     startHighlightLoop(entry.el, tl, onsetInterval, iterationSec);
+                    flipToStop();
                 });
             }).catch((err) => {
                 console && console.error && console.error('Palta render failed:', err);
@@ -4264,6 +4304,14 @@
         async function startTanpura() {
             if (tanpuraState && tanpuraState.isPlaying) return;
 
+            // Immediate visual feedback while the offline render runs —
+            // rendering ~60 s of stacked tanpura plucks can take a few
+            // seconds on mobile. Without this, the button just sits at
+            // "Start" and looks stuck.
+            const toggleEl = document.getElementById('tanpura-toggle');
+            toggleEl.textContent = 'Loading...';
+            toggleEl.classList.add('playing');
+
             const sampleRate = 44100;
 
             setMediaSessionMetadata('Tanpura Drone', 'Palta Alankar Maker');
@@ -4366,9 +4414,34 @@
             entry.el.loop = true;
             const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
             entry.el.volume = Math.max(0, Math.min(1, vol));
+
+            // If the palta is already playing, delay the tanpura start
+            // so its first Sa pluck lands on a palta beat. Capped at 2 s
+            // so the UI stays responsive.
+            if (playbackState && playbackState.onsetInterval &&
+                typeof playbackState.msUntilNextBeat === 'function') {
+                const waitMs = playbackState.msUntilNextBeat();
+                if (waitMs > 40 && waitMs < 2000) {
+                    await new Promise(r => setTimeout(r, waitMs));
+                    if (!tanpuraState || !tanpuraState.isPlaying) return;
+                }
+            }
+
             try {
                 await loadAndPlayBlob('tanpura', blob);
             } catch (e) { /* autoplay errors */ }
+
+            // Record the wall-clock time at which the audio actually
+            // started + the cycle length, so palta (or a future start)
+            // can align to a tanpura cycle boundary.
+            tanpuraState.cycleDuration = cycleDuration;
+            tanpuraState.startWallMs = performance.now();
+            tanpuraState.msUntilNextCycle = function () {
+                if (!tanpuraState || !tanpuraState.startWallMs) return 0;
+                const elapsed = (performance.now() - tanpuraState.startWallMs) / 1000;
+                const intoCycle = elapsed - Math.floor(elapsed / cycleDuration) * cycleDuration;
+                return (cycleDuration - intoCycle) * 1000;
+            };
 
             document.getElementById('tanpura-toggle').textContent = 'Stop';
             document.getElementById('tanpura-toggle').classList.add('playing');
