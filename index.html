@@ -4113,7 +4113,11 @@
             //      between strings).
 
             const masterEnv = audioCtx.createGain();
-            masterEnv.gain.value = volume * 0.08;
+            // Low per-pluck gain because the steady-state drone stacks
+            // many plucks' decays (up to 10+ overlapping at once). We
+            // normalise the full loop buffer to 0.9 peak afterwards, so
+            // starting conservative here preserves dynamic range.
+            masterEnv.gain.value = volume * 0.04;
             masterEnv.connect(dest);
 
             // Shared body resonance lowpass — softens partials above
@@ -4313,16 +4317,19 @@
             //      the crossfade transitions between two musically-
             //      identical regions — the seam disappears.
 
-            // Extend the loop to span several cycles so the seam is rarer.
-            const LOOP_CYCLES = Math.max(3, Math.ceil(12 / cycleDuration));
+            // Extend the loop to ~60 s so the inherent HTMLAudioElement.loop
+            // seam on iOS only happens once per minute — imperceptible for
+            // normal practice. (Palta loops are 50-70 s and play back
+            // seamlessly in background, so we match that.)
+            const LOOP_CYCLES = Math.max(8, Math.ceil(60 / cycleDuration));
             const loopSec = LOOP_CYCLES * cycleDuration;
             // Warm-up so steady state is reached before our snapshot.
             const WARM_CYCLES = Math.max(3, Math.ceil(10 / cycleDuration));
             // Plus one extra cycle past the snapshot to feed the crossfade.
             const TOTAL_CYCLES = WARM_CYCLES + LOOP_CYCLES + 1;
-            // Long crossfade — up to half a cycle. Smears the seam over a
-            // region of real audio content.
-            const crossfadeSec = Math.min(0.5 * cycleDuration, 0.8);
+            // Long crossfade — up to half a cycle, max 1 second. Smears
+            // the seam over a region of real audio content.
+            const crossfadeSec = Math.min(0.5 * cycleDuration, 1.0);
             const renderSec = TOTAL_CYCLES * cycleDuration;
 
             let blob;
