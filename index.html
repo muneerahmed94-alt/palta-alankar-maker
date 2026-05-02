@@ -2415,6 +2415,7 @@
             }
         }
 
+
         // Set up Media Session API so the lock screen shows what's playing.
         function setMediaSessionMetadata(title, artist) {
             if (!('mediaSession' in navigator)) return;
@@ -4285,33 +4286,44 @@
             const stringCount = freqs.length;
             const cycleDuration = stringCount * interval;
 
-            // Seamless-loop technique used here:
+            // Seamless-loop technique:
             //
-            // 1. Render WARM_CYCLES + 1 cycles of plucks into one long
-            //    buffer. That gives previous-cycle decays time to reach
-            //    steady state by the time we reach the last cycle.
-            // 2. Extract the LAST cycle plus one extra crossfade window
-            //    from the render. This snapshot has both (a) steady-state
-            //    decay overlap, and (b) a little extra tail past the
-            //    cycle end for crossfading.
-            // 3. Equal-power crossfade the first crossfadeLen samples of
-            //    the snapshot with the tail samples. This blends the
-            //    attack-heavy start of the cycle with the decay-heavy
-            //    end, masking the hard discontinuity that a new pluck's
-            //    attack otherwise creates at the loop boundary.
+            // The previous approach (snapshot = one cycle + small crossfade
+            // tail) still had an audible seam because:
+            //   (a) HTMLAudioElement.loop has a notorious small "gap" at
+            //       the wrap point on iOS Safari — there's always a brief
+            //       silence or click where playback restarts;
+            //   (b) with only one cycle in the loop, this gap happens
+            //       every few seconds, which the ear easily latches onto.
             //
-            // The crossfade has to be long enough to span a pluck attack
-            // (~50 ms) but short enough that it doesn't blur the rhythm.
-            // 120 ms works across the full tempo range.
-            const loopSec = cycleDuration;
-            // Each pluck's jawari bloom extends ~9 s. Compute warm-up
-            // cycles so we have at least 10 s of pre-snapshot history
-            // regardless of tempo — steady-state overlap is what gives
-            // the drone its "fullness."
+            // So we play a LONG loop spanning several cycles. The wrap-
+            // gap still happens, but now only once every ~12 s instead
+            // of every ~4 s — far less perceptible. We also use a large
+            // crossfade window (spanning roughly half a cycle) so the
+            // boundary is smeared over a long window of real audio.
+            //
+            // Steps:
+            //   1. Render WARM_CYCLES + LOOP_CYCLES + 1 cycles of plucks.
+            //   2. Slice out LOOP_CYCLES cycles from the steady-state
+            //      region, plus one extra cycle past that for the tail.
+            //   3. Equal-power crossfade the first half-cycle of the
+            //      slice with the tail's half-cycle. Since the content
+            //      at the tail IS the continuation of the content before
+            //      the tail (they came from consecutive render cycles),
+            //      the crossfade transitions between two musically-
+            //      identical regions — the seam disappears.
+
+            // Extend the loop to span several cycles so the seam is rarer.
+            const LOOP_CYCLES = Math.max(3, Math.ceil(12 / cycleDuration));
+            const loopSec = LOOP_CYCLES * cycleDuration;
+            // Warm-up so steady state is reached before our snapshot.
             const WARM_CYCLES = Math.max(3, Math.ceil(10 / cycleDuration));
-            const TOTAL_CYCLES = WARM_CYCLES + 1;
-            const crossfadeSec = 0.18;
-            const renderSec = TOTAL_CYCLES * cycleDuration + crossfadeSec;
+            // Plus one extra cycle past the snapshot to feed the crossfade.
+            const TOTAL_CYCLES = WARM_CYCLES + LOOP_CYCLES + 1;
+            // Long crossfade — up to half a cycle. Smears the seam over a
+            // region of real audio content.
+            const crossfadeSec = Math.min(0.5 * cycleDuration, 0.8);
+            const renderSec = TOTAL_CYCLES * cycleDuration;
 
             let blob;
             try {
@@ -4327,11 +4339,11 @@
                         }
                     }
                 });
-                // Snapshot = the last cycle (steady state) plus a bit of
-                // the next cycle's opening for the crossfade.
+                // Slice from end-of-warmup, enough for loop + one cycle
+                // of "future" audio to feed the crossfade.
                 const sliceStartSec = WARM_CYCLES * cycleDuration;
-                const snapshot = sliceBuffer(fullBuffer, sliceStartSec, cycleDuration + crossfadeSec);
-                const looped = buildCrossfadedLoop(snapshot, cycleDuration, crossfadeSec);
+                const snapshot = sliceBuffer(fullBuffer, sliceStartSec, loopSec + cycleDuration);
+                const looped = buildCrossfadedLoop(snapshot, loopSec, crossfadeSec);
                 const normalised = normaliseBuffer(looped, 0.9);
                 blob = audioBufferToWavBlob(normalised);
             } catch (e) {
@@ -4345,7 +4357,6 @@
 
             const entry = ensureMediaPlayer('tanpura');
             entry.el.loop = true;
-            // Set volume from the slider before playing to avoid a loud first pluck.
             const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
             entry.el.volume = Math.max(0, Math.min(1, vol));
             try {
