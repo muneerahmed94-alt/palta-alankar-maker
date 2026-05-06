@@ -3667,6 +3667,11 @@
                     }
                 }
 
+                // Compute the exact loop duration from the actual sample
+                // count so the highlight modulo never drifts — iterationSec
+                // is a float that may not land on a sample boundary.
+                const exactIterationSec = shaped.length / sampleRate;
+
                 loadAndPlayBlob('palta', blob).then(() => {
                     if (!repeatOn) {
                         const cleanup = () => {
@@ -3679,7 +3684,7 @@
                     // play() resolves so the first tick happens once audio
                     // is actually running. Also flip the button label
                     // from "Loading..." to "Stop".
-                    startHighlightLoop(entry.el, tl, onsetInterval, iterationSec);
+                    startHighlightLoop(entry.el, tl, onsetInterval, exactIterationSec, repeatOn);
                     // Record when audio actually started + the onset
                     // interval, so a subsequent tanpura start can align
                     // to the palta's next downbeat.
@@ -3696,7 +3701,7 @@
                     }
                     flipToStop();
                 }).catch(() => {
-                    startHighlightLoop(entry.el, tl, onsetInterval, iterationSec);
+                    startHighlightLoop(entry.el, tl, onsetInterval, exactIterationSec, repeatOn);
                     flipToStop();
                 });
             }).catch((err) => {
@@ -3704,37 +3709,45 @@
                 finishPlayback();
             });
 
-            // Drive the visual highlight from a wall-clock timer anchored
-            // to when audio ACTUALLY started playing.
+            // Drive the visual highlight using two strategies depending on
+            // whether playback is looping or single-shot:
             //
-            // Why not audio.currentTime? On iOS Safari, currentTime reports
-            // the decoder position, which can run several seconds ahead of
-            // what the speakers are actually outputting for large WAV
-            // files — making the highlight visibly early.
+            // LOOPING (repeat mode): use audio.currentTime % iterationSec.
+            //   currentTime on a looping <audio> element tracks the actual
+            //   decoded position and is self-correcting — it can never drift
+            //   across iterations. iterationSec is derived from the exact
+            //   sample count (shaped.length / sampleRate) so the modulo
+            //   boundary aligns perfectly with the WAV loop point.
             //
-            // Instead we capture performance.now() on the 'playing' event
-            // (which fires when the media is genuinely producing sound,
-            // after the buffer-in latency) and compute the note index from
-            // elapsed wall-clock time modulo the iteration length. Tiny
-            // clock drift over a long session is imperceptible; being
-            // seconds ahead is not.
-            function startHighlightLoop(audioEl, timeline, onsetInterval, iterationSec) {
+            // SINGLE-SHOT: use wall-clock (performance.now()) anchored to the
+            //   'playing' event. On iOS Safari, currentTime for large single-
+            //   shot WAVs reports the decoder position, which can run several
+            //   seconds ahead of actual speaker output — making highlights
+            //   visibly early. Wall-clock avoids that at the cost of tiny
+            //   long-session drift, which is imperceptible for one-shot play.
+            function startHighlightLoop(audioEl, timeline, onsetInterval, iterationSec, isLooping) {
                 let lastIdx = -1;
                 let rafId = null;
+
+                // For looping playback, audio.currentTime % iterationSec is
+                // always self-correcting — no drift accumulates across iterations.
+                //
+                // For single-shot playback we fall back to wall-clock because
+                // iOS Safari can report currentTime ahead of actual output on
+                // large single-shot WAVs; that issue doesn't apply to looping
+                // blobs which iOS loops at the sample level.
                 let playStartMs = null;
 
                 function onPlaying() {
-                    // First time audio is actually outputting. performance.now()
-                    // is the wall-clock timestamp we'll count from.
                     if (playStartMs === null) {
                         playStartMs = performance.now();
                     }
                 }
-                audioEl.addEventListener('playing', onPlaying);
-                // If audio is already playing (rare — play() usually fires
-                // 'playing' asynchronously), capture immediately.
-                if (!audioEl.paused && audioEl.readyState >= 3) {
-                    playStartMs = performance.now();
+                if (!isLooping) {
+                    audioEl.addEventListener('playing', onPlaying);
+                    if (!audioEl.paused && audioEl.readyState >= 3) {
+                        playStartMs = performance.now();
+                    }
                 }
 
                 function tick() {
@@ -3742,27 +3755,35 @@
                         audioEl.removeEventListener('playing', onPlaying);
                         return;
                     }
-                    // Not started yet — wait for the 'playing' event.
-                    if (playStartMs === null) {
-                        rafId = requestAnimationFrame(tick);
-                        playbackState.highlightRaf = rafId;
-                        return;
-                    }
-                    // If the user paused (e.g. lock-screen pause), freeze
-                    // the highlight and hold wall-clock time relative to
-                    // the element's currentTime when we resume.
-                    if (audioEl.paused) {
-                        // Re-anchor on next 'playing' so the pause doesn't
-                        // skew our wall clock.
-                        playStartMs = null;
-                        audioEl.addEventListener('playing', onPlaying, { once: true });
-                        rafId = requestAnimationFrame(tick);
-                        playbackState.highlightRaf = rafId;
-                        return;
+
+                    let timeInIter;
+                    if (isLooping) {
+                        if (audioEl.paused) {
+                            rafId = requestAnimationFrame(tick);
+                            playbackState.highlightRaf = rafId;
+                            return;
+                        }
+                        // currentTime counts up monotonically through loops on
+                        // most browsers; modulo gives position within iteration.
+                        timeInIter = audioEl.currentTime % iterationSec;
+                    } else {
+                        // Single-shot: wall-clock to avoid iOS currentTime
+                        // running ahead of actual output on large WAVs.
+                        if (playStartMs === null) {
+                            rafId = requestAnimationFrame(tick);
+                            playbackState.highlightRaf = rafId;
+                            return;
+                        }
+                        if (audioEl.paused) {
+                            playStartMs = null;
+                            audioEl.addEventListener('playing', onPlaying, { once: true });
+                            rafId = requestAnimationFrame(tick);
+                            playbackState.highlightRaf = rafId;
+                            return;
+                        }
+                        timeInIter = ((performance.now() - playStartMs) / 1000) % iterationSec;
                     }
 
-                    const elapsed = (performance.now() - playStartMs) / 1000;
-                    const timeInIter = elapsed % iterationSec;
                     const idx = Math.floor(timeInIter / onsetInterval);
                     if (idx !== lastIdx) {
                         lastIdx = idx;

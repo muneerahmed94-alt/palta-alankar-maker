@@ -210,7 +210,7 @@ Palta playback uses the offline-render + `<audio>`-element pattern so it keeps p
 - `renderPaltaWav(sampleRate, timeline, ip, renderSec)` — runs `renderToBuffer()` with `renderPaltaTimelineOnContext()` as the render function, then encodes via `audioBufferToWavBlob()`.
 - `renderPaltaTimelineOnContext(ctx, dest, timeline, ip)` — schedules all notes of one timeline onto a context (live or offline). Shared between offline render (used now) and the code path that would live-schedule if we ever needed to fall back.
 - Repeat mode sets `audio.loop = true`; otherwise we listen for the `ended` event and call `finishPlayback()`.
-- Visual highlights are driven by `setTimeout` counted from the moment the WAV starts playing — they work for the first iteration in foreground; after that the screen is typically locked anyway.
+- Visual highlights are driven by `requestAnimationFrame` via `startHighlightLoop()` with two strategies: **repeat mode** uses `audio.currentTime % iterationSec` (self-correcting — no drift accumulates across iterations); **single-shot** uses a wall-clock timer anchored to the `'playing'` event (avoids iOS Safari reporting `currentTime` ahead of actual speaker output on large single-shot WAVs). `iterationSec` is computed from the exact WAV sample count (`shaped.length / sampleRate`) so the modulo boundary aligns perfectly with the loop point.
 
 **Key functions:**
 - `doGenerate()` — Parses input, generates palta, renders, sets tempo to 102 BPM. Auto-corrects input text to reflect swara variants.
