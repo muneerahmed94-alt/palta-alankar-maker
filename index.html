@@ -3672,22 +3672,34 @@
                 // is a float that may not land on a sample boundary.
                 const exactIterationSec = shaped.length / sampleRate;
 
-                loadAndPlayBlob('palta', blob).then(() => {
+                // liveParams is the shared mutable context for this playback
+                // session. The highlight RAF loop reads isLooping/iterationSec/tl
+                // from it on every tick, so the checkbox handlers can mutate it
+                // mid-playback and the change takes effect immediately. renderParams
+                // carries the render inputs so background re-renders can reuse them.
+                const liveParams = {
+                    mode,
+                    repeatId,
+                    tl,
+                    onsetInterval,
+                    iterationSec: exactIterationSec,
+                    isLooping: repeatOn,
+                    playStartMs: null,
+                    renderParams: { sampleRate, ip, iterationSec, tailSec, renderSec },
+                };
+
+                function beginHighlight() {
+                    if (!playbackState) return;
+                    playbackState.liveParams = liveParams;
                     if (!repeatOn) {
                         const cleanup = () => {
                             entry.el.removeEventListener('ended', cleanup);
                             finishPlayback();
                         };
                         entry.el.addEventListener('ended', cleanup);
+                        playbackState.endedCleanup = cleanup;
                     }
-                    // Start the currentTime-driven highlight loop AFTER
-                    // play() resolves so the first tick happens once audio
-                    // is actually running. Also flip the button label
-                    // from "Loading..." to "Stop".
-                    startHighlightLoop(entry.el, tl, onsetInterval, exactIterationSec, repeatOn);
-                    // Record when audio actually started + the onset
-                    // interval, so a subsequent tanpura start can align
-                    // to the palta's next downbeat.
+                    startLiveHighlightLoop(entry.el, liveParams);
                     if (playbackState) {
                         playbackState.onsetInterval = onsetInterval;
                         playbackState.startWallMs = performance.now();
@@ -3700,109 +3712,18 @@
                         };
                     }
                     flipToStop();
+                }
+
+                loadAndPlayBlob('palta', blob).then(() => {
+                    beginHighlight();
                 }).catch(() => {
-                    startHighlightLoop(entry.el, tl, onsetInterval, exactIterationSec, repeatOn);
-                    flipToStop();
+                    beginHighlight();
                 });
             }).catch((err) => {
                 console && console.error && console.error('Palta render failed:', err);
                 finishPlayback();
             });
 
-            // Drive the visual highlight using two strategies depending on
-            // whether playback is looping or single-shot:
-            //
-            // LOOPING (repeat mode): use audio.currentTime % iterationSec.
-            //   currentTime on a looping <audio> element tracks the actual
-            //   decoded position and is self-correcting — it can never drift
-            //   across iterations. iterationSec is derived from the exact
-            //   sample count (shaped.length / sampleRate) so the modulo
-            //   boundary aligns perfectly with the WAV loop point.
-            //
-            // SINGLE-SHOT: use wall-clock (performance.now()) anchored to the
-            //   'playing' event. On iOS Safari, currentTime for large single-
-            //   shot WAVs reports the decoder position, which can run several
-            //   seconds ahead of actual speaker output — making highlights
-            //   visibly early. Wall-clock avoids that at the cost of tiny
-            //   long-session drift, which is imperceptible for one-shot play.
-            function startHighlightLoop(audioEl, timeline, onsetInterval, iterationSec, isLooping) {
-                let lastIdx = -1;
-                let rafId = null;
-
-                // For looping playback, audio.currentTime % iterationSec is
-                // always self-correcting — no drift accumulates across iterations.
-                //
-                // For single-shot playback we fall back to wall-clock because
-                // iOS Safari can report currentTime ahead of actual output on
-                // large single-shot WAVs; that issue doesn't apply to looping
-                // blobs which iOS loops at the sample level.
-                let playStartMs = null;
-
-                function onPlaying() {
-                    if (playStartMs === null) {
-                        playStartMs = performance.now();
-                    }
-                }
-                if (!isLooping) {
-                    audioEl.addEventListener('playing', onPlaying);
-                    if (!audioEl.paused && audioEl.readyState >= 3) {
-                        playStartMs = performance.now();
-                    }
-                }
-
-                function tick() {
-                    if (!playbackState) {
-                        audioEl.removeEventListener('playing', onPlaying);
-                        return;
-                    }
-
-                    let timeInIter;
-                    if (isLooping) {
-                        if (audioEl.paused) {
-                            rafId = requestAnimationFrame(tick);
-                            playbackState.highlightRaf = rafId;
-                            return;
-                        }
-                        // currentTime counts up monotonically through loops on
-                        // most browsers; modulo gives position within iteration.
-                        timeInIter = audioEl.currentTime % iterationSec;
-                    } else {
-                        // Single-shot: wall-clock to avoid iOS currentTime
-                        // running ahead of actual output on large WAVs.
-                        if (playStartMs === null) {
-                            rafId = requestAnimationFrame(tick);
-                            playbackState.highlightRaf = rafId;
-                            return;
-                        }
-                        if (audioEl.paused) {
-                            playStartMs = null;
-                            audioEl.addEventListener('playing', onPlaying, { once: true });
-                            rafId = requestAnimationFrame(tick);
-                            playbackState.highlightRaf = rafId;
-                            return;
-                        }
-                        timeInIter = ((performance.now() - playStartMs) / 1000) % iterationSec;
-                    }
-
-                    const idx = Math.floor(timeInIter / onsetInterval);
-                    if (idx !== lastIdx) {
-                        lastIdx = idx;
-                        if (idx >= 0 && idx < timeline.length) {
-                            highlightNote(timeline[idx]);
-                        } else {
-                            highlightNote(null);
-                        }
-                    }
-                    rafId = requestAnimationFrame(tick);
-                    playbackState.highlightRaf = rafId;
-                }
-
-                if (playbackState && playbackState.highlightRaf) {
-                    cancelAnimationFrame(playbackState.highlightRaf);
-                }
-                rafId = requestAnimationFrame(tick);
-                if (playbackState) playbackState.highlightRaf = rafId;
-            }
         }
 
         // Render one full palta iteration (plus tail) offline. Returns the
@@ -4841,6 +4762,217 @@
                 reRenderPalta();
             }
         });
+
+        // Live-update playback when skip/repeat checkboxes change.
+        //
+        // Repeat toggle: no re-render needed — flip audio.loop and update the
+        // highlight timing strategy in place.
+        //
+        // Skip toggle: the beats are baked into the WAV, so we must re-render.
+        // We do it in the background (current audio keeps playing) and swap the
+        // blob + restart the highlight once the new buffer is ready.
+        // ── Live checkbox updates ────────────────────────────────────────────
+        //
+        // Repeat toggle (no re-render needed):
+        //   OFF → flip audio.loop, attach 'ended' cleanup, switch highlight
+        //         to wall-clock mode anchored to the current playhead position.
+        //   ON  → re-render a seamless-loop WAV in the background; current audio
+        //         keeps playing until the new blob is ready, then swap.
+        //
+        // Skip toggle (beats are baked into the WAV, must re-render):
+        //   Rebuild the timeline from the new checkbox state, render in the
+        //   background while current audio continues, swap when done.
+        //
+        // pendingRenderToken is incremented on every new render request so that
+        // a stale render completing after a second toggle is silently discarded.
+        //
+        // liveParams (stored on playbackState) is a mutable object shared by
+        // both handlers and the highlight RAF loop. Mutating it (tl, iterationSec,
+        // isLooping) takes effect on the very next animation frame without
+        // restarting the loop, keeping highlight in sync through blob swaps.
+
+        function onRepeatCheckboxChange() {
+            if (!playbackState || !playbackState.liveParams) return;
+            const lp = playbackState.liveParams;
+            const repeatCb = document.getElementById(lp.repeatId);
+            const repeatOn = !!(repeatCb && repeatCb.checked);
+            const entry = _mediaPlayers.get('palta');
+            if (!entry) return;
+
+            // Cancel any in-flight background re-render.
+            playbackState.pendingRenderToken = (playbackState.pendingRenderToken || 0) + 1;
+
+            if (!repeatOn) {
+                // Switch to single-shot: stop looping. Audio will end naturally.
+                entry.el.loop = false;
+                const cleanup = () => {
+                    entry.el.removeEventListener('ended', cleanup);
+                    finishPlayback();
+                };
+                entry.el.addEventListener('ended', cleanup);
+                playbackState.endedCleanup = cleanup;
+
+                // Restart highlight in wall-clock mode anchored to current position.
+                const elapsed = entry.el.currentTime;
+                lp.isLooping = false;
+                restartHighlightFromOffset(entry.el, lp, elapsed);
+            } else {
+                // Switch to looping: re-render a seamless buffer in the background.
+                // Current (non-looping) audio keeps playing until the new blob is ready.
+                const token = playbackState.pendingRenderToken;
+                const p = lp.renderParams;
+                renderPaltaBuffer(p.sampleRate, lp.tl, p.ip, p.renderSec).then((buffer) => {
+                    if (!playbackState || playbackState.pendingRenderToken !== token) return;
+                    const shaped = buildSeamlessLoopBuffer(buffer, p.iterationSec);
+                    const blob = audioBufferToWavBlob(shaped);
+                    const exactIterationSec = shaped.length / p.sampleRate;
+                    entry.el.loop = true;
+                    lp.isLooping = true;
+                    lp.iterationSec = exactIterationSec;
+                    // Remove any ended listener from a previous single-shot phase.
+                    if (playbackState.endedCleanup) {
+                        entry.el.removeEventListener('ended', playbackState.endedCleanup);
+                        playbackState.endedCleanup = null;
+                    }
+                    loadAndPlayBlob('palta', blob).then(() => {
+                        restartHighlightFromOffset(entry.el, lp, 0);
+                    }).catch(() => {
+                        restartHighlightFromOffset(entry.el, lp, 0);
+                    });
+                });
+            }
+        }
+
+        function onSkipCheckboxChange() {
+            if (!playbackState || !playbackState.liveParams) return;
+            const lp = playbackState.liveParams;
+            const p = lp.renderParams;
+            const token = (playbackState.pendingRenderToken || 0) + 1;
+            playbackState.pendingRenderToken = token;
+
+            const params = getPlaybackParams();
+            let newTl;
+            if (lp.mode === 'asc') {
+                newTl = buildAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats);
+            } else if (lp.mode === 'desc') {
+                newTl = buildDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats);
+            } else {
+                const ascTl = buildAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats);
+                const descTl = (currentPaltaData.descending && currentPaltaData.descending.length > 0)
+                    ? buildDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats)
+                    : [];
+                newTl = ascTl.concat(descTl);
+            }
+            if (!newTl || newTl.length === 0) return;
+
+            const newIterationSec = newTl.length * p.ip.onsetInterval;
+            const newRenderSec = newIterationSec + p.tailSec;
+            const repeatCb = document.getElementById(lp.repeatId);
+            const repeatOn = !!(repeatCb && repeatCb.checked);
+
+            renderPaltaBuffer(p.sampleRate, newTl, p.ip, newRenderSec).then((buffer) => {
+                if (!playbackState || playbackState.pendingRenderToken !== token) return;
+                const shaped = repeatOn
+                    ? buildSeamlessLoopBuffer(buffer, newIterationSec)
+                    : trimBuffer(buffer, newIterationSec + p.tailSec);
+                const blob = audioBufferToWavBlob(shaped);
+                const exactIterationSec = shaped.length / p.sampleRate;
+                const entry = _mediaPlayers.get('palta');
+                if (!entry) return;
+                entry.el.loop = repeatOn;
+                lp.tl = newTl;
+                lp.iterationSec = exactIterationSec;
+                lp.isLooping = repeatOn;
+                lp.renderParams.iterationSec = newIterationSec;
+                lp.renderParams.renderSec = newRenderSec;
+                if (playbackState.endedCleanup) {
+                    entry.el.removeEventListener('ended', playbackState.endedCleanup);
+                    playbackState.endedCleanup = null;
+                }
+                loadAndPlayBlob('palta', blob).then(() => {
+                    if (!repeatOn) {
+                        const cleanup = () => {
+                            entry.el.removeEventListener('ended', cleanup);
+                            finishPlayback();
+                        };
+                        entry.el.addEventListener('ended', cleanup);
+                        playbackState.endedCleanup = cleanup;
+                    }
+                    restartHighlightFromOffset(entry.el, lp, 0);
+                }).catch(() => {
+                    restartHighlightFromOffset(entry.el, lp, 0);
+                });
+            });
+        }
+
+        // Restart the RAF highlight loop using the current liveParams,
+        // optionally offset into the iteration (for seamless repeat→single swap).
+        function restartHighlightFromOffset(audioEl, lp, offsetSec) {
+            if (playbackState && playbackState.highlightRaf) {
+                cancelAnimationFrame(playbackState.highlightRaf);
+                playbackState.highlightRaf = null;
+            }
+            // For wall-clock mode, anchor playStartMs so timeInIter = offsetSec at t=0.
+            lp.playStartMs = performance.now() - offsetSec * 1000;
+            startLiveHighlightLoop(audioEl, lp);
+        }
+
+        // Like startHighlightLoop but reads isLooping / iterationSec live from lp
+        // so repeat toggles take effect on the next tick without restarting.
+        function startLiveHighlightLoop(audioEl, lp) {
+            let lastIdx = -1;
+            let rafId = null;
+
+            function onPlaying() {
+                if (lp.playStartMs === null) lp.playStartMs = performance.now();
+            }
+            if (!lp.isLooping) {
+                audioEl.addEventListener('playing', onPlaying);
+                if (!audioEl.paused && audioEl.readyState >= 3 && lp.playStartMs === null) {
+                    lp.playStartMs = performance.now();
+                }
+            }
+
+            function tick() {
+                if (!playbackState) {
+                    audioEl.removeEventListener('playing', onPlaying);
+                    return;
+                }
+                let timeInIter;
+                if (lp.isLooping) {
+                    if (audioEl.paused) { rafId = requestAnimationFrame(tick); playbackState.highlightRaf = rafId; return; }
+                    timeInIter = audioEl.currentTime % lp.iterationSec;
+                } else {
+                    if (lp.playStartMs === null) { rafId = requestAnimationFrame(tick); playbackState.highlightRaf = rafId; return; }
+                    if (audioEl.paused) {
+                        lp.playStartMs = null;
+                        audioEl.addEventListener('playing', onPlaying, { once: true });
+                        rafId = requestAnimationFrame(tick); playbackState.highlightRaf = rafId; return;
+                    }
+                    timeInIter = ((performance.now() - lp.playStartMs) / 1000) % lp.iterationSec;
+                }
+                const idx = Math.floor(timeInIter / lp.onsetInterval);
+                if (idx !== lastIdx) {
+                    lastIdx = idx;
+                    highlightNote(idx >= 0 && idx < lp.tl.length ? lp.tl[idx] : null);
+                }
+                rafId = requestAnimationFrame(tick);
+                playbackState.highlightRaf = rafId;
+            }
+
+            if (playbackState && playbackState.highlightRaf) cancelAnimationFrame(playbackState.highlightRaf);
+            rafId = requestAnimationFrame(tick);
+            if (playbackState) playbackState.highlightRaf = rafId;
+        }
+
+        document.getElementById('output-lines').addEventListener('change', (e) => {
+            const cb = e.target;
+            if (!cb.matches('input[type="checkbox"]')) return;
+            const id = cb.id;
+            if (id === 'skip-intro-beats' || id === 'skip-transition-beats') onSkipCheckboxChange();
+            else if (id === 'repeat-asc' || id === 'repeat-desc') onRepeatCheckboxChange();
+        });
+        document.getElementById('repeat-all').addEventListener('change', onRepeatCheckboxChange);
 
         // Tempo: keep slider and input in sync
         document.getElementById('tempo-slider').addEventListener('input', (e) => {
