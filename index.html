@@ -14,7 +14,9 @@
   - Practice mode: each line plays audio (orange highlight) then metronome-only
     (blue highlight) for the student to repeat after, as many times as selected
     in the reps picker (1–10, default 2). Loop checkbox works the same as Listen.
-  - Provides a tanpura drone for practice with jawari simulation.
+  - Provides a tanpura drone with two modes: Sample (streams real recordings
+    for Sa=C and Sa=C#; courtesy Delhite Gurdeep / ksarpotdar/tanpura-online)
+    and Synth (additive synthesis with jawari bridge simulation, all 12 keys).
   - Provides preset patterns (common, special, and custom "My patterns").
   - Provides a MIDI keyboard interface to play along with the generated palta.
 
@@ -34,7 +36,9 @@
     1. Sa = key selector     — sets the root note (C through B)
     2. Swara Selector        — chromatic piano keyboard with fixed Western note labels
                                 (C–B) and movable swara labels that shift with Sa =
-    3. Tanpura               — drone with strings, pitch, volume, tempo, jawari controls
+    3. Tanpura               — drone with "Use samples" toggle (default on):
+                                Sample mode: volume only; streams C/C# recordings
+                                Synth mode:  strings, pitch, volume, tempo, jawari
     4. Common patterns       — 12 palta presets (repetitions, ascending, direction changes)
     5. Special patterns      — scale, SR/SG pairs, RS/GS pairs, expanding
     6. My patterns           — user's custom saved patterns
@@ -318,6 +322,35 @@
             align-items: center;
             justify-content: space-between;
             margin-bottom: 0.8rem;
+        }
+
+        .tanpura-header-controls {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .tanpura-sample-label {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: 0.8rem;
+            color: #8d6e63;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .tanpura-sample-label input {
+            accent-color: #bf360c;
+            width: 13px;
+            height: 13px;
+            cursor: pointer;
+        }
+
+        .tanpura-sample-note {
+            font-size: 0.78rem;
+            color: #c62828;
+            font-style: italic;
         }
 
         .tanpura-label {
@@ -1455,40 +1488,57 @@
             <div class="tanpura-section" id="tanpura-section">
                 <div class="tanpura-header">
                     <span class="tanpura-label">Tanpura</span>
-                    <button class="tanpura-toggle" id="tanpura-toggle">Start</button>
+                    <div class="tanpura-header-controls">
+                        <label class="tanpura-sample-label">
+                            <input type="checkbox" id="tanpura-use-sample" checked>
+                            Use samples
+                        </label>
+                        <button class="tanpura-toggle" id="tanpura-toggle">Start</button>
+                    </div>
                 </div>
-                <div class="tanpura-controls">
-                    <label>
-                        Strings&nbsp;
-                        <select class="tanpura-select" id="tanpura-tuning">
-                            <option value="pa" selected>Pa Sa Sa Sa</option>
-                            <option value="ma">Ma Sa Sa Sa</option>
-                            <option value="ni">Ni Sa Sa Sa</option>
-                            <option value="pa5">Pa Sa Sa Sa Sa (5)</option>
-                            <option value="ma5">Ma Sa Sa Sa Sa (5)</option>
-                        </select>
-                    </label>
-                    <label>
-                        Pitch&nbsp;
-                        <select class="tanpura-select" id="tanpura-pitch">
-                            <option value="male">Male (low)</option>
-                            <option value="female" selected>Female (high)</option>
-                        </select>
-                    </label>
-                </div>
-                <div class="tanpura-controls">
+                <!-- Sample mode: volume only -->
+                <div class="tanpura-controls" id="tanpura-sample-controls">
                     <label class="tanpura-slider-label">
                         Volume&nbsp;
                         <input type="range" class="tanpura-slider" id="tanpura-volume" min="0" max="100" value="50">
                     </label>
-                    <label class="tanpura-slider-label">
-                        Tempo&nbsp;
-                        <input type="range" class="tanpura-slider" id="tanpura-tempo" min="30" max="120" value="60">
-                    </label>
-                    <label class="tanpura-slider-label">
-                        Jawari&nbsp;
-                        <input type="range" class="tanpura-slider" id="tanpura-jawari" min="0" max="100" value="40">
-                    </label>
+                    <span class="tanpura-sample-note" id="tanpura-sample-note"></span>
+                </div>
+                <!-- Synth mode: all controls -->
+                <div id="tanpura-synth-controls" style="display:none">
+                    <div class="tanpura-controls">
+                        <label>
+                            Strings&nbsp;
+                            <select class="tanpura-select" id="tanpura-tuning">
+                                <option value="pa" selected>Pa Sa Sa Sa</option>
+                                <option value="ma">Ma Sa Sa Sa</option>
+                                <option value="ni">Ni Sa Sa Sa</option>
+                                <option value="pa5">Pa Sa Sa Sa Sa (5)</option>
+                                <option value="ma5">Ma Sa Sa Sa Sa (5)</option>
+                            </select>
+                        </label>
+                        <label>
+                            Pitch&nbsp;
+                            <select class="tanpura-select" id="tanpura-pitch">
+                                <option value="male">Male (low)</option>
+                                <option value="female" selected>Female (high)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div class="tanpura-controls">
+                        <label class="tanpura-slider-label">
+                            Volume&nbsp;
+                            <input type="range" class="tanpura-slider" id="tanpura-volume-synth" min="0" max="100" value="50">
+                        </label>
+                        <label class="tanpura-slider-label">
+                            Tempo&nbsp;
+                            <input type="range" class="tanpura-slider" id="tanpura-tempo" min="30" max="120" value="60">
+                        </label>
+                        <label class="tanpura-slider-label">
+                            Jawari&nbsp;
+                            <input type="range" class="tanpura-slider" id="tanpura-jawari" min="0" max="100" value="40">
+                        </label>
+                    </div>
                 </div>
             </div>
 
@@ -4708,7 +4758,7 @@
 
             const entry = ensureMediaPlayer('tanpura');
             entry.el.loop = true;
-            const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+            const vol = parseInt(document.getElementById('tanpura-volume-synth').value) / 100;
             entry.el.volume = Math.max(0, Math.min(1, vol));
 
             // If the palta is already playing, delay the tanpura start
@@ -4991,12 +5041,13 @@
         // Wires up all UI controls. Dynamic elements (section play buttons,
         // add/delete buttons) use event delegation on #output-lines.
         // ══════════════════════════════════════════════════════
-        // Tanpura toggle
+        // Tanpura toggle — dispatches to sample or synth mode.
         document.getElementById('tanpura-toggle').addEventListener('click', () => {
             if (tanpuraState && tanpuraState.isPlaying) {
                 stopTanpura();
             } else {
-                startTanpura();
+                const useSample = document.getElementById('tanpura-use-sample').checked;
+                if (useSample) startTanpuraSample(); else startTanpura();
             }
         });
 
@@ -5021,13 +5072,101 @@
                 }
             });
         });
-        // Volume is cheap — apply live to the <audio> element's volume
-        // without re-rendering. HTMLMediaElement.volume is 0..1.
+        // ── Tanpura sample mode ──────────────────────────────────────────────────
+        // Sample URLs from ksarpotdar/tanpura-online (courtesy Delhite Gurdeep).
+        // Only C and C# are available; any other Sa shows an inline error.
+        const TANPURA_SAMPLE_URLS = {
+            'C':  'https://raw.githubusercontent.com/ksarpotdar/tanpura-online/master/c.mp3',
+            'C#': 'https://raw.githubusercontent.com/ksarpotdar/tanpura-online/master/csharp.mp3',
+        };
+
+        async function startTanpuraSample() {
+            const key = document.getElementById('key-select').value;
+            const url = TANPURA_SAMPLE_URLS[key];
+            const noteEl = document.getElementById('tanpura-sample-note');
+            const toggleEl = document.getElementById('tanpura-toggle');
+
+            if (!url) {
+                noteEl.textContent = 'Samples only available for Sa = C or C#';
+                return;
+            }
+            noteEl.textContent = '';
+
+            toggleEl.textContent = 'Loading...';
+            toggleEl.classList.add('playing');
+            tanpuraState = { isPlaying: true, mediaName: 'tanpura' };
+
+            // Prime inside the user gesture so iOS allows the subsequent play().
+            loadAndPlayBlob('tanpura', makeSilencePrimer()).catch(() => {});
+
+            setMediaSessionMetadata('Tanpura Drone', 'Palta Alankar Maker');
+            setMediaSessionHandlers({
+                pause: () => stopTanpura(),
+                play:  () => {
+                    const entry = _mediaPlayers.get('tanpura');
+                    if (entry && entry.el.paused) entry.el.play().catch(() => {});
+                },
+            });
+
+            const entry = ensureMediaPlayer('tanpura');
+            entry.el.loop = true;
+            const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+            entry.el.volume = Math.max(0, Math.min(1, vol));
+
+            // Remove any old blob URL and point directly at the remote MP3.
+            if (entry.blobUrl) {
+                URL.revokeObjectURL(entry.blobUrl);
+                entry.blobUrl = null;
+            }
+            entry.el.src = url;
+
+            // Align start to a palta beat if palta is playing.
+            if (playbackState && playbackState.onsetInterval &&
+                typeof playbackState.msUntilNextBeat === 'function') {
+                const waitMs = playbackState.msUntilNextBeat();
+                if (waitMs > 40 && waitMs < 2000) {
+                    await new Promise(r => setTimeout(r, waitMs));
+                    if (!tanpuraState || !tanpuraState.isPlaying) return;
+                }
+            }
+
+            try {
+                await entry.el.play();
+            } catch (e) { /* autoplay policy */ }
+
+            toggleEl.textContent = 'Stop';
+            toggleEl.classList.add('playing');
+            // No cycleDuration needed for samples — msUntilNextCycle returns 0.
+            tanpuraState.cycleDuration = 4;
+            tanpuraState.startWallMs = performance.now();
+            tanpuraState.msUntilNextCycle = () => 0;
+        }
+
+        // Show/hide controls and clear error note when mode checkbox changes.
+        function onTanpuraUseSampleChange() {
+            const useSample = document.getElementById('tanpura-use-sample').checked;
+            document.getElementById('tanpura-sample-controls').style.display = useSample ? '' : 'none';
+            document.getElementById('tanpura-synth-controls').style.display  = useSample ? 'none' : '';
+            document.getElementById('tanpura-sample-note').textContent = '';
+            if (tanpuraState && tanpuraState.isPlaying) stopTanpura();
+        }
+
+        document.getElementById('tanpura-use-sample').addEventListener('change', onTanpuraUseSampleChange);
+
+        // Volume sliders — apply live without re-rendering.
         document.getElementById('tanpura-volume').addEventListener('input', () => {
             if (!tanpuraState || !tanpuraState.isPlaying) return;
             const entry = _mediaPlayers.get('tanpura');
             if (!entry) return;
             const vol = parseInt(document.getElementById('tanpura-volume').value) / 100;
+            entry.el.volume = Math.max(0, Math.min(1, vol));
+        });
+
+        document.getElementById('tanpura-volume-synth').addEventListener('input', () => {
+            if (!tanpuraState || !tanpuraState.isPlaying) return;
+            const entry = _mediaPlayers.get('tanpura');
+            if (!entry) return;
+            const vol = parseInt(document.getElementById('tanpura-volume-synth').value) / 100;
             entry.el.volume = Math.max(0, Math.min(1, vol));
         });
 
@@ -5473,6 +5612,9 @@
             if (currentParsedNotes) {
                 reRenderPalta();
             }
+            // Clear the "samples only for C/C#" error when the key changes.
+            const noteEl = document.getElementById('tanpura-sample-note');
+            if (noteEl) noteEl.textContent = '';
         });
 
         // ── Swara Selector — piano key click handler ─────────
