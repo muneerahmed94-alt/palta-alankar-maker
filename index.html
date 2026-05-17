@@ -9,7 +9,11 @@
   WHAT IT DOES:
   - Takes the first line of a palta/alankar (e.g. "Sa Re Ga Ma") and generates
     all 7 ascending (aarohi) and 7 descending (avarohi) lines automatically.
-  - Plays back the generated palta using synthesized Piano or Harmonium sounds.
+  - Plays back the generated palta using synthesized Piano or Harmonium sounds
+    (Listen mode: full audio playback with orange highlight).
+  - Practice mode: each line plays audio (orange highlight) then metronome-only
+    (blue highlight) for the student to repeat after, as many times as selected
+    in the reps picker (1–10, default 2). Loop checkbox works the same as Listen.
   - Provides a tanpura drone for practice with jawari simulation.
   - Provides preset patterns (common, special, and custom "My patterns").
   - Provides a MIDI keyboard interface to play along with the generated palta.
@@ -23,7 +27,7 @@
                                 (includes special pattern generator for SR/SG/... type)
         3. Renderer           — builds the DOM for the generated palta display
         4. Audio Engine       — Web Audio API synthesizers (3 piano types + harmonium)
-        5. Playback Engine    — schedules timed playback of palta lines
+        5. Playback Engine    — Listen mode and Practice mode (per-line audio + repeat)
         6. MIDI Keyboard      — Web MIDI API for external keyboard input
 
   UI LAYOUT (Input Card, top to bottom):
@@ -40,11 +44,11 @@
   UI LAYOUT (Output Card):
     1. Generated Palta title + Copy as Text
     2. Sound / Type / Brand / Reed / Left Coupler options
-    3. Playback bar (Beats, Tempo, Play Both, Repeat)
+    3. Playback bar (Beats, Tempo, Listen Both, Practice Both + reps picker, Loop)
     4. Include Avarohi checkbox (live toggle — shows/hides descending section)
     5. Pattern info
-    6. Aarohi (ascending) lines with Play/Repeat/Skip controls
-    7. Avarohi (descending) lines (if enabled)
+    6. Aarohi (ascending) lines with Listen / Practice+reps / Loop / Skip controls
+    7. Avarohi (descending) lines (if enabled), same controls
     8. Legend (octave color coding)
 
   SWARA NUMBERING:
@@ -181,7 +185,8 @@
          4. Tanpura Controls    — drone section with start/stop, tuning, sliders
          5. Output Card         — palta display, sound options, playback bar,
                                   include avarohi, legend
-         6. Playback Controls   — play/stop buttons, tempo, beat selector
+         6. Playback Controls   — listen/practice/stop buttons, tempo, beat selector,
+                                  blue highlight override for practice silent phase
          7. MIDI Card           — MIDI connection, sound options, adj buttons
          8. Footer              — developer credit
          9. Responsive          — mobile breakpoint at 600px
@@ -665,6 +670,51 @@
             background: #ffcdd2;
         }
 
+        .practice-group {
+            display: flex;
+            align-items: center;
+        }
+
+        .practice-reps-select {
+            border: 1px solid #90caf9;
+            border-left: none;
+            border-radius: 0 6px 6px 0;
+            background: #e3f2fd;
+            color: #1565c0;
+            font-family: inherit;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 0 0.3rem;
+            align-self: stretch;
+            cursor: pointer;
+            outline: none;
+        }
+
+        .practice-group .section-practice-btn,
+        .practice-group .practice-btn {
+            border-radius: 6px 0 0 6px;
+        }
+
+        .section-practice-btn, .practice-btn {
+            background: #e3f2fd;
+            border-color: #90caf9;
+            color: #1565c0;
+        }
+
+        .section-practice-btn:hover, .practice-btn:hover {
+            background: #bbdefb;
+        }
+
+        .section-practice-btn.stopping, .practice-btn.stopping {
+            background: #ffebee;
+            border-color: #ef9a9a;
+            color: #c62828;
+        }
+
+        .section-practice-btn.stopping:hover, .practice-btn.stopping:hover {
+            background: #ffcdd2;
+        }
+
         .repeat-label {
             display: flex;
             align-items: center;
@@ -1048,6 +1098,16 @@
             transform: scale(1.15);
             transition: all 0.08s ease;
             box-shadow: 0 2px 8px rgba(230, 81, 0, 0.35);
+        }
+
+        /* Silent (repeat-after-me) phase — blue highlight */
+        body.practice-silent .swar.playing {
+            background: #1565c0 !important;
+            box-shadow: 0 2px 8px rgba(21, 101, 192, 0.35);
+        }
+
+        body.practice-silent .palta-line.playing {
+            background: #e3f2fd !important;
         }
 
         /* ── 5. MIDI Keyboard Card ────────────────────────── */
@@ -1555,8 +1615,23 @@
                     </div>
                 </div>
                 <div class="play-controls">
-                    <button class="play-btn" id="play-btn">&#9654; Play Both</button>
-                    <label class="repeat-label"><input type="checkbox" id="repeat-all"> Repeat</label>
+                    <button class="play-btn" id="play-btn">&#9654; Listen Both</button>
+                    <div class="practice-group">
+                        <button class="play-btn practice-btn" id="practice-btn">&#9654; Practice Both</button>
+                        <select class="practice-reps-select" id="practice-reps-all" title="Repetitions per line">
+                            <option value="1">×1</option>
+                            <option value="2" selected>×2</option>
+                            <option value="3">×3</option>
+                            <option value="4">×4</option>
+                            <option value="5">×5</option>
+                            <option value="6">×6</option>
+                            <option value="7">×7</option>
+                            <option value="8">×8</option>
+                            <option value="9">×9</option>
+                            <option value="10">×10</option>
+                        </select>
+                    </div>
+                    <label class="repeat-label"><input type="checkbox" id="repeat-all"> Loop</label>
                 </div>
             </div>
             <div class="options" id="avarohi-option">
@@ -2108,8 +2183,31 @@
                 const playBtn = document.createElement('button');
                 playBtn.className = 'section-play-btn';
                 playBtn.id = playId;
-                playBtn.innerHTML = '&#9654; Play';
+                playBtn.textContent = '▶ Listen';
                 controls.appendChild(playBtn);
+
+                const practiceGroup = document.createElement('div');
+                practiceGroup.className = 'practice-group';
+
+                const practiceBtn = document.createElement('button');
+                practiceBtn.className = 'section-play-btn section-practice-btn';
+                practiceBtn.id = playId.replace('play-', 'practice-');
+                practiceBtn.textContent = '▶ Practice';
+                practiceGroup.appendChild(practiceBtn);
+
+                const repsSelect = document.createElement('select');
+                repsSelect.className = 'practice-reps-select';
+                repsSelect.id = playId.replace('play-', 'practice-reps-');
+                repsSelect.title = 'Repetitions per line';
+                for (let v = 1; v <= 10; v++) {
+                    const opt = document.createElement('option');
+                    opt.value = String(v);
+                    opt.textContent = '×' + v;
+                    if (v === 2) opt.selected = true;
+                    repsSelect.appendChild(opt);
+                }
+                practiceGroup.appendChild(repsSelect);
+                controls.appendChild(practiceGroup);
 
                 const repeatLabel = document.createElement('label');
                 repeatLabel.className = 'repeat-label';
@@ -2117,7 +2215,7 @@
                 repeatCb.type = 'checkbox';
                 repeatCb.id = repeatId;
                 repeatLabel.appendChild(repeatCb);
-                repeatLabel.appendChild(document.createTextNode('Repeat'));
+                repeatLabel.appendChild(document.createTextNode('Loop'));
                 controls.appendChild(repeatLabel);
 
                 header.appendChild(controls);
@@ -3390,22 +3488,38 @@
 
         // ══════════════════════════════════════════════════════
         // ── 5. PLAYBACK ENGINE ───────────────────────────────
-        // Schedules palta playback using Web Audio API timing.
+        // Renders palta playback to WAV blobs and drives visual highlighting.
         //
         // Architecture:
-        //   - A single AudioContext persists across repeat loops.
-        //   - buildAscTimeline / buildDescTimeline create arrays of events
-        //     (either 'beat' for metronome clicks or 'note' for swara notes).
-        //   - scheduleSegment() pre-schedules all audio nodes on the AudioContext
-        //     timeline, and sets up setTimeout callbacks for visual highlighting.
-        //   - For "Play Both" mode, aarohi is scheduled first, then avarohi is
-        //     chained 500ms before aarohi ends for seamless transition.
-        //   - Repeat is handled by re-calling scheduleIteration() at the end.
+        //   - buildAscTimeline / buildDescTimeline create flat arrays of events
+        //     ({ type:'beat'|'note', section, lineIdx, swarIdx, noteNum }).
+        //   - renderPaltaBuffer() renders all events into an AudioBuffer offline,
+        //     encoded to a 16-bit PCM WAV Blob and played via a hidden <audio>.
+        //   - A requestAnimationFrame loop (startLiveHighlightLoop) reads
+        //     audio.currentTime each frame and highlights the matching DOM cell.
+        //   - Repeat is handled by looping the <audio> element and using
+        //     currentTime % iterationSec for highlight position.
         //
-        // Three playback modes:
-        //   'all'  — both aarohi + avarohi (Play Both button)
-        //   'asc'  — aarohi only (section play button)
-        //   'desc' — avarohi only (section play button)
+        // Three playback modes (shared by Listen and Practice):
+        //   'all'  — aarohi + avarohi (Listen Both / Practice Both buttons)
+        //   'asc'  — aarohi only (section Listen / Practice button)
+        //   'desc' — avarohi only (section Listen / Practice button)
+        //
+        // Listen mode  — startPlayback(): renders one iteration, plays audio
+        //                and highlights in sync. Repeat checkbox loops seamlessly.
+        //
+        // Practice mode — startPracticePlayback(): builds a doubled timeline via
+        //   buildPracticeAscTimeline / buildPracticeDescTimeline. Each line appears
+        //   twice: first pass tagged practicePhase:'audio' (full instrument sound),
+        //   second pass tagged practicePhase:'silent' (only a metronome click per
+        //   note slot, no instrument). The WAV encodes both passes at full length;
+        //   renderPracticeBuffer() skips instrument rendering for silent slots but
+        //   inserts metronome clicks so the user has a rhythmic cue to repeat after.
+        //   During the silent pass the highlight turns blue (body.practice-silent
+        //   CSS class) to signal it's the user's turn to sing or play along.
+        //   A reps picker (×2–×10, default ×2) controls how many audio+silent
+        //   cycles each line receives. Loop and Skip checkboxes work the same as
+        //   Listen mode.
         // ══════════════════════════════════════════════════════
 
         function buildAscTimeline(palta, beatCount, skipIntroBeats) {
@@ -3452,7 +3566,16 @@
             document.querySelectorAll('.swar.playing').forEach(el => el.classList.remove('playing'));
             document.querySelectorAll('.palta-line.playing').forEach(el => el.classList.remove('playing'));
 
-            if (!event) return;
+            if (!event) {
+                document.body.classList.remove('practice-silent');
+                return;
+            }
+
+            if (event.practicePhase === 'silent') {
+                document.body.classList.add('practice-silent');
+            } else {
+                document.body.classList.remove('practice-silent');
+            }
 
             if (event.type === 'beat') {
                 const swar = document.querySelector(
@@ -3724,6 +3847,223 @@
                 finishPlayback();
             });
 
+        }
+
+        // Build a "practice timeline" where every line is doubled:
+        // first pass has practicePhase:'audio', second pass has practicePhase:'silent'.
+        // Intro/transition beats appear once (audio only).
+        // The WAV renderer skips silent events; the highlight loop fires for both.
+        // Each line is repeated `reps` times. Each repetition is one audio pass
+        // followed by one silent pass (metronome only), so the student hears the
+        // line and repeats after it `reps` times before moving to the next line.
+        function buildPracticeAscTimeline(palta, beatCount, skipIntroBeats, reps) {
+            const timeline = [];
+            if (!skipIntroBeats) {
+                for (let i = 0; i < beatCount; i++) {
+                    timeline.push({ type: 'beat', section: 'beat-intro', swarIdx: i, practicePhase: 'audio' });
+                }
+            }
+            palta.ascending.forEach((line, li) => {
+                for (let r = 0; r < reps; r++) {
+                    line.forEach((noteNum, si) => {
+                        timeline.push({ type: 'note', noteNum, section: 'asc', lineIdx: li, swarIdx: si, practicePhase: 'audio' });
+                    });
+                    line.forEach((noteNum, si) => {
+                        timeline.push({ type: 'note', noteNum, section: 'asc', lineIdx: li, swarIdx: si, practicePhase: 'silent' });
+                    });
+                }
+            });
+            return timeline;
+        }
+
+        function buildPracticeDescTimeline(palta, beatCount, skipTransitionBeats, reps) {
+            const timeline = [];
+            if (!skipTransitionBeats) {
+                for (let i = 0; i < beatCount; i++) {
+                    timeline.push({ type: 'beat', section: 'beat-transition', swarIdx: i, practicePhase: 'audio' });
+                }
+            }
+            palta.descending.forEach((line, li) => {
+                for (let r = 0; r < reps; r++) {
+                    line.forEach((noteNum, si) => {
+                        timeline.push({ type: 'note', noteNum, section: 'desc', lineIdx: li, swarIdx: si, practicePhase: 'audio' });
+                    });
+                    line.forEach((noteNum, si) => {
+                        timeline.push({ type: 'note', noteNum, section: 'desc', lineIdx: li, swarIdx: si, practicePhase: 'silent' });
+                    });
+                }
+            });
+            return timeline;
+        }
+
+        // Practice mode: for each line, plays it `reps` times — each rep is one
+        // audio pass followed by one silent (metronome-only) pass. The Loop
+        // checkbox reuses the same checkbox as the Listen button for the section.
+        function startPracticePlayback(mode, triggerBtn) {
+            if (!currentPaltaData) return;
+            stopPlayback();
+
+            const repeatId = mode === 'asc' ? 'repeat-asc' : mode === 'desc' ? 'repeat-desc' : 'repeat-all';
+            const repsSelectId = mode === 'asc' ? 'practice-reps-asc' : mode === 'desc' ? 'practice-reps-desc' : 'practice-reps-all';
+            const repsEl = document.getElementById(repsSelectId);
+            const reps = repsEl ? (parseInt(repsEl.value) || 2) : 2;
+
+            function buildPracticeTl(p) {
+                if (mode === 'asc') {
+                    return buildPracticeAscTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats, reps);
+                } else if (mode === 'desc') {
+                    return buildPracticeDescTimeline(currentPaltaData, p.beatCount, p.skipTransitionBeats, reps);
+                } else {
+                    const ascTl = buildPracticeAscTimeline(currentPaltaData, p.beatCount, p.skipIntroBeats, reps);
+                    const descTl = (currentPaltaData.descending && currentPaltaData.descending.length > 0)
+                        ? buildPracticeDescTimeline(currentPaltaData, p.beatCount, p.skipTransitionBeats, reps)
+                        : [];
+                    return ascTl.concat(descTl);
+                }
+            }
+
+            const p = getPlaybackParams();
+            const ip = {
+                key: p.key,
+                onsetInterval: 60 / p.tempo,
+                noteDuration: p.instrument === 'harmonium' ? 60 / p.tempo : Math.max((60 / p.tempo) * 2, 0.45),
+                instrument: p.instrument,
+                pianoType: p.pianoType,
+                reedType: p.reedType,
+                brand: p.brand,
+                leftCoupler: p.leftCoupler,
+            };
+            const onsetInterval = ip.onsetInterval;
+            const tl = buildPracticeTl(p);
+            if (!tl || tl.length === 0) return;
+
+            const iterationSec = tl.length * onsetInterval;
+            const tailSec = ip.instrument === 'harmonium' ? 2.4 : 0.8;
+            const renderSec = iterationSec + tailSec;
+            const sampleRate = 44100;
+
+            const repeatCbEarly = document.getElementById(repeatId);
+            const repeatOn = !!(repeatCbEarly && repeatCbEarly.checked);
+
+            const timers = [];
+            playbackState = { timers, mediaName: 'palta' };
+
+            if (triggerBtn) {
+                activePlayBtn = triggerBtn;
+                activePlayBtn._origHTML = activePlayBtn.innerHTML;
+                activePlayBtn.innerHTML = 'Loading...';
+                activePlayBtn.classList.add('stopping');
+                activePlayBtn.disabled = false;
+            }
+
+            const primerBlob = makeSilencePrimer();
+            loadAndPlayBlob('palta', primerBlob).catch(() => {});
+            setMediaSessionMetadata('Palta Practice', 'Palta Alankar Maker');
+            setMediaSessionHandlers({
+                pause: () => stopPlayback(),
+                play: () => {
+                    const entry = _mediaPlayers.get('palta');
+                    if (entry && entry.el.paused) entry.el.play().catch(() => {});
+                },
+            });
+
+            renderPracticeBuffer(sampleRate, tl, ip, renderSec).then(async (buffer) => {
+                if (!playbackState || playbackState.mediaName !== 'palta') return;
+
+                const shaped = repeatOn
+                    ? buildSeamlessLoopBuffer(buffer, iterationSec)
+                    : trimBuffer(buffer, iterationSec + tailSec);
+                const blob = audioBufferToWavBlob(shaped);
+                const entry = _mediaPlayers.get('palta');
+                if (!entry) return;
+                entry.el.loop = repeatOn;
+
+                if (tanpuraState && tanpuraState.isPlaying &&
+                    typeof tanpuraState.msUntilNextCycle === 'function') {
+                    const waitMs = tanpuraState.msUntilNextCycle();
+                    if (waitMs > 40 && waitMs < 2000) {
+                        await new Promise(r => setTimeout(r, waitMs));
+                        if (!playbackState || playbackState.mediaName !== 'palta') return;
+                    }
+                }
+
+                const exactIterationSec = shaped.length / sampleRate;
+
+                const liveParams = {
+                    mode,
+                    repeatId,
+                    isPractice: true,
+                    tl,
+                    onsetInterval,
+                    iterationSec: exactIterationSec,
+                    isLooping: repeatOn,
+                    playStartMs: null,
+                    renderParams: { sampleRate, ip, iterationSec, tailSec, renderSec, reps },
+                };
+
+                function beginHighlight() {
+                    if (!playbackState) return;
+                    playbackState.liveParams = liveParams;
+                    if (!repeatOn) {
+                        const cleanup = () => {
+                            entry.el.removeEventListener('ended', cleanup);
+                            finishPlayback();
+                        };
+                        entry.el.addEventListener('ended', cleanup);
+                        playbackState.endedCleanup = cleanup;
+                    }
+                    startLiveHighlightLoop(entry.el, liveParams);
+                    if (playbackState) {
+                        playbackState.onsetInterval = onsetInterval;
+                        playbackState.startWallMs = performance.now();
+                    }
+                    if (activePlayBtn && playbackState) {
+                        activePlayBtn.innerHTML = '&#9632; Stop';
+                    }
+                }
+
+                loadAndPlayBlob('palta', blob).then(() => {
+                    beginHighlight();
+                }).catch(() => {
+                    beginHighlight();
+                });
+            }).catch((err) => {
+                console && console.error && console.error('Practice render failed:', err);
+                finishPlayback();
+            });
+        }
+
+        // Renders a practice timeline: same as renderPaltaBuffer but silent-phase
+        // slots produce no audio (the time slot passes in silence so the WAV
+        // duration matches the full timeline and the highlight stays in sync).
+        async function renderPracticeBuffer(sampleRate, timeline, ip, renderSec) {
+            return await renderToBuffer(sampleRate, renderSec, 1, (offCtx, offDest) => {
+                const compressor = offCtx.createDynamicsCompressor();
+                compressor.threshold.value = -20;
+                compressor.knee.value = 20;
+                compressor.ratio.value = 4;
+                compressor.connect(offDest);
+                const { key, onsetInterval, noteDuration, instrument, pianoType, reedType, brand, leftCoupler } = ip;
+                for (let i = 0; i < timeline.length; i++) {
+                    const ev = timeline[i];
+                    const evTime = i * onsetInterval;
+                    if (ev.practicePhase === 'silent') {
+                        if (ev.type === 'note') createMetronomeClick(offCtx, compressor, evTime);
+                        continue;
+                    }
+                    if (ev.type === 'beat') {
+                        createMetronomeClick(offCtx, compressor, evTime);
+                    } else {
+                        const freq = noteNumToFreq(ev.noteNum, key);
+                        if (instrument === 'harmonium') {
+                            const reverb = getHarmoniumReverbBus(offCtx, compressor);
+                            createHarmoniumNote(offCtx, reverb.input, freq, evTime, noteDuration, reedType, leftCoupler, false, brand);
+                        } else {
+                            createPianoNote(offCtx, compressor, freq, evTime, noteDuration, pianoType, leftCoupler, false);
+                        }
+                    }
+                }
+            });
         }
 
         // Render one full palta iteration (plus tail) offline. Returns the
@@ -4730,7 +5070,7 @@
             });
         });
 
-        // Play Both / Stop button
+        // Listen Both / Stop button
         document.getElementById('play-btn').addEventListener('click', (e) => {
             const btn = e.currentTarget;
             if (btn.classList.contains('stopping')) {
@@ -4740,7 +5080,17 @@
             }
         });
 
-        // Section play buttons and add/delete (delegated — they are created dynamically)
+        // Practice Both button
+        document.getElementById('practice-btn').addEventListener('click', (e) => {
+            const btn = e.currentTarget;
+            if (btn.classList.contains('stopping')) {
+                stopPlayback();
+            } else {
+                startPracticePlayback('all', btn);
+            }
+        });
+
+        // Section play/practice buttons and add/delete (delegated — they are created dynamically)
         document.getElementById('output-lines').addEventListener('click', (e) => {
             const playBtn = e.target.closest('.section-play-btn');
             if (playBtn) {
@@ -4750,6 +5100,10 @@
                     startPlayback('asc', playBtn);
                 } else if (playBtn.id === 'play-desc') {
                     startPlayback('desc', playBtn);
+                } else if (playBtn.id === 'practice-asc') {
+                    startPracticePlayback('asc', playBtn);
+                } else if (playBtn.id === 'practice-desc') {
+                    startPracticePlayback('desc', playBtn);
                 }
                 return;
             }
@@ -4821,7 +5175,8 @@
                 // Current (non-looping) audio keeps playing until the new blob is ready.
                 const token = playbackState.pendingRenderToken;
                 const p = lp.renderParams;
-                renderPaltaBuffer(p.sampleRate, lp.tl, p.ip, p.renderSec).then((buffer) => {
+                const renderFn = lp.isPractice ? renderPracticeBuffer : renderPaltaBuffer;
+                renderFn(p.sampleRate, lp.tl, p.ip, p.renderSec).then((buffer) => {
                     if (!playbackState || playbackState.pendingRenderToken !== token) return;
                     const shaped = buildSeamlessLoopBuffer(buffer, p.iterationSec);
                     const blob = audioBufferToWavBlob(shaped);
@@ -4852,16 +5207,31 @@
 
             const params = getPlaybackParams();
             let newTl;
-            if (lp.mode === 'asc') {
-                newTl = buildAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats);
-            } else if (lp.mode === 'desc') {
-                newTl = buildDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats);
+            if (lp.isPractice) {
+                const reps = p.reps || 2;
+                if (lp.mode === 'asc') {
+                    newTl = buildPracticeAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats, reps);
+                } else if (lp.mode === 'desc') {
+                    newTl = buildPracticeDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats, reps);
+                } else {
+                    const ascTl = buildPracticeAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats, reps);
+                    const descTl = (currentPaltaData.descending && currentPaltaData.descending.length > 0)
+                        ? buildPracticeDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats, reps)
+                        : [];
+                    newTl = ascTl.concat(descTl);
+                }
             } else {
-                const ascTl = buildAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats);
-                const descTl = (currentPaltaData.descending && currentPaltaData.descending.length > 0)
-                    ? buildDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats)
-                    : [];
-                newTl = ascTl.concat(descTl);
+                if (lp.mode === 'asc') {
+                    newTl = buildAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats);
+                } else if (lp.mode === 'desc') {
+                    newTl = buildDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats);
+                } else {
+                    const ascTl = buildAscTimeline(currentPaltaData, params.beatCount, params.skipIntroBeats);
+                    const descTl = (currentPaltaData.descending && currentPaltaData.descending.length > 0)
+                        ? buildDescTimeline(currentPaltaData, params.beatCount, params.skipTransitionBeats)
+                        : [];
+                    newTl = ascTl.concat(descTl);
+                }
             }
             if (!newTl || newTl.length === 0) return;
 
@@ -4870,7 +5240,8 @@
             const repeatCb = document.getElementById(lp.repeatId);
             const repeatOn = !!(repeatCb && repeatCb.checked);
 
-            renderPaltaBuffer(p.sampleRate, newTl, p.ip, newRenderSec).then((buffer) => {
+            const renderFn = lp.isPractice ? renderPracticeBuffer : renderPaltaBuffer;
+            renderFn(p.sampleRate, newTl, p.ip, newRenderSec).then((buffer) => {
                 if (!playbackState || playbackState.pendingRenderToken !== token) return;
                 const shaped = repeatOn
                     ? buildSeamlessLoopBuffer(buffer, newIterationSec)
